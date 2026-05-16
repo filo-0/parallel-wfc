@@ -1,0 +1,8 @@
+[
+{
+  "directory": "/home/lofi/repos/uni/parallel-computing/parallel-wfc/build",
+  "command": "/usr/bin/c++  -I/home/lofi/repos/uni/parallel-computing/parallel-wfc/include -std=gnu++23 -o CMakeFiles/pwfc.dir/src/pwfc.cpp.o -c /home/lofi/repos/uni/parallel-computing/parallel-wfc/src/pwfc.cpp",
+  "file": "/home/lofi/repos/uni/parallel-computing/parallel-wfc/src/pwfc.cpp",
+  "output": "CMakeFiles/pwfc.dir/src/pwfc.cpp.o"
+}
+]

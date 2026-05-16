@@ -1,0 +1,14 @@
+[
+{
+  "directory": "/home/lofi/repos/uni/parallel-computing/parallel-wfc/build",
+  "command": "/usr/bin/g++ -I/home/lofi/repos/uni/parallel-computing/parallel-wfc/include -O3 -DNDEBUG -std=gnu++23 -O3 -o CMakeFiles/pwfc.dir/src/generation.cpp.o -c /home/lofi/repos/uni/parallel-computing/parallel-wfc/src/generation.cpp",
+  "file": "/home/lofi/repos/uni/parallel-computing/parallel-wfc/src/generation.cpp",
+  "output": "/home/lofi/repos/uni/parallel-computing/parallel-wfc/build/CMakeFiles/pwfc.dir/src/generation.cpp.o"
+},
+{
+  "directory": "/home/lofi/repos/uni/parallel-computing/parallel-wfc/build",
+  "command": "/usr/bin/g++ -I/home/lofi/repos/uni/parallel-computing/parallel-wfc/include -O3 -DNDEBUG -std=gnu++23 -O3 -o CMakeFiles/pwfc.dir/src/pwfc.cpp.o -c /home/lofi/repos/uni/parallel-computing/parallel-wfc/src/pwfc.cpp",
+  "file": "/home/lofi/repos/uni/parallel-computing/parallel-wfc/src/pwfc.cpp",
+  "output": "/home/lofi/repos/uni/parallel-computing/parallel-wfc/build/CMakeFiles/pwfc.dir/src/pwfc.cpp.o"
+}
+]

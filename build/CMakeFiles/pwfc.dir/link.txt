@@ -1,0 +1,1 @@
+/usr/bin/c++ -Wl,-rpath -Wl,/usr/lib -Wl,--enable-new-dtags -Wl,--dependency-file=CMakeFiles/pwfc.dir/link.d CMakeFiles/pwfc.dir/src/generation.cpp.o CMakeFiles/pwfc.dir/src/pwfc.cpp.o -o pwfc  /usr/lib/libmpi.so

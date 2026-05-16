@@ -1,0 +1,260 @@
+
+#include <cassert>
+#include <print>
+#include <random>
+#include <vector>
+#include <iostream>
+
+#include "pwfc.hpp"
+
+namespace PWFC 
+{
+    void QPattern::Collapse(std::mt19937 &rand)
+    {
+        int pick = rand() % Entropy();
+        Iterator p = begin();
+        for (int i = 0; i < pick; i++)
+            ++p;
+
+        int state = p.Idx;
+        _State.reset();
+        _State.set(state);
+    }
+    void QPattern::Collapse(int state)
+    {
+        _State.reset();
+        _State.set(state);
+    }
+    static inline int iOpposite(int dir) { return (dir + 2) % 4; }
+    static inline int iIdx(int x, int y) { return y * CHUNK_LEN + x; }
+    
+    static inline int iX(int idx) { return idx % CHUNK_LEN; }
+    static inline int iY(int idx) { return idx / CHUNK_LEN; }
+
+    static inline int iX(int x, int dir) { return x + (2 - dir) % 2; }
+    static inline int iY(int y, int dir) { return y + (1 - dir) % 2; }
+    
+    static inline bool iCanConnect(Pattern a, Pattern b, int a2b)
+    {
+        int b2a = iOpposite(a2b);
+
+        bool aOpen = a.Get(iX(1, a2b), iY(1, a2b));
+        bool bOpen = b.Get(iX(1, b2a), iY(1, b2a));
+
+        return aOpen == bOpen;
+    }
+    
+    static void iPropagate(std::array<QChunk*, 9> &chunks, int centerX, int centerY)
+    {
+        struct iWave { int Chunk, FromX, FromY, Dir; };
+        std::vector<iWave> stack = 
+        {
+            {4, centerX, centerY, 0 },
+            {4, centerX, centerY, 1 },
+            {4, centerX, centerY, 2 },
+            {4, centerX, centerY, 3 },
+        };
+
+        while(!stack.empty())
+        {
+            iWave wave = stack.back();
+            stack.pop_back();
+            
+            int toX = iX(wave.FromX, wave.Dir);
+            int toY = iY(wave.FromY, wave.Dir);
+            
+            int toChunkId = wave.Chunk;
+            if     (toX >= CHUNK_LEN) { toChunkId += 1; toX = 0; }
+            else if(toY >= CHUNK_LEN) { toChunkId += 3; toY = 0; } 
+            else if(toX < 0)          { toChunkId -= 1; toX = CHUNK_LEN - 1; }
+            else if(toY < 0)          { toChunkId -= 3; toY = CHUNK_LEN - 1; }
+            
+            //assert(toChunkId >= 0 && toChunkId < 9);
+            if(toChunkId >= 9 || toChunkId < 0)
+            {
+                std::println("[WARNING] Propagation went out of bound!");
+                continue;
+            }
+            if(chunks[toChunkId] == nullptr)
+                continue;
+
+            auto &fromChunk = *chunks[wave.Chunk];
+            auto &toChunk   = *chunks[toChunkId];
+
+            const QPattern &from = fromChunk.Get(wave.FromX, wave.FromY);
+                  QPattern &to   = toChunk  .Get(toX, toY);
+
+            bool changed = false;
+            for (auto i = to.begin(); i != to.end(); ++i)
+            {
+                bool match = false;
+                for (auto j = from.begin(); j != from.end(); ++j)
+                {
+                    if (iCanConnect(from.State(j.Idx), to.State(i.Idx), wave.Dir))
+                    {
+                        match = true;
+                        break;
+                    }
+                }
+
+                if (!match)
+                {
+                    to.Clear(i.Idx);
+                    changed = true;
+                }
+            }
+            if (!changed)
+                continue;
+            if(to.Entropy() == 0)
+            {
+                std::println("[WARNING] Cell collapsed to zero entropy!");
+                continue;
+            }
+
+            for (int d = 0; d < 4; d++)
+                if (d != iOpposite(wave.Dir))
+                    stack.emplace_back(toChunkId, toX, toY, d);
+        }
+    }
+
+    int Generate(std::array<QChunk*, 9>& chunks, int seed)
+    {
+        if(chunks[4] == nullptr)
+            return 1;
+
+        auto &pivot = *chunks[4];
+        std::vector<int> indices;
+        std::mt19937 rand(seed);
+ 
+        while(true)
+        {
+            int minEntropy = MAX_ENTROPY;
+            indices.clear();
+            for(int idx = 0; idx < CHUNK_SIZE; idx++)
+            {
+                QPattern &q = pivot.Get(idx);
+                if(q.IsCollapsed())
+                    continue;
+                if(q.Entropy() == 0)
+                    return 1;
+                if(q.Entropy() == minEntropy)
+                {
+                    indices.push_back(idx);
+                }
+                else if(q.Entropy() < minEntropy)
+                {
+                    indices.clear();
+                    minEntropy = q.Entropy();
+                    indices.push_back(idx);
+                }
+            }
+            if(indices.empty())
+                break;
+            
+            int idx = indices[rand() % indices.size()];
+            pivot.Get(idx).Collapse(rand);
+
+            iPropagate(chunks, iX(idx), iY(idx));
+        }
+
+        return 0;
+    }
+
+
+    void PrintQChunk(QChunk& chunk, std::ostream &stream) 
+    {
+        char buffer[CHUNK_LEN * PATTERN_SIZE][CHUNK_LEN * PATTERN_SIZE];
+
+        for (int y = 0; y < CHUNK_LEN; y++) 
+        {
+            for (int x = 0; x < CHUNK_LEN; x++) 
+            {
+                // Assuming Get(x, y) or Get(y * CHUNK_LEN + x) is available
+                QPattern& q = chunk.Get(y * CHUNK_LEN + x);
+
+                bool collapsed = q.IsCollapsed();
+                // Fetch the collapsed state
+                Pattern state = q.State();
+                for (int i = 0; i < PATTERN_SIZE; i++)
+                    for (int j = 0; j < PATTERN_SIZE; j++)
+                        buffer[y * PATTERN_SIZE + i][x * PATTERN_SIZE + j] = collapsed ? (state.Get(j, i) ? ' ' : '#') : '?';
+            }
+        }
+        for (int y = 0; y < CHUNK_LEN * PATTERN_SIZE; y++) 
+        {
+            for (int x = 0; x < CHUNK_LEN * PATTERN_SIZE; x++) 
+                stream << ' ' << buffer[y][x];
+            stream << "\n";
+        }
+    }
+
+    bool iValidateBorders(const QChunk &a, const QChunk &b, int a2b)
+    {
+        int b2a = iOpposite(a2b);
+        int pax = iX(1, a2b) / 2 * (CHUNK_LEN - 1);
+        int pay = iY(1, a2b) / 2 * (CHUNK_LEN - 1);
+        int pbx = iX(1, b2a) / 2 * (CHUNK_LEN - 1);
+        int pby = iY(1, b2a) / 2 * (CHUNK_LEN - 1);
+        
+        for (int i = 0; i < CHUNK_LEN; i++) 
+        {
+            Pattern stateA = a.Get(pax, pay).State();
+            Pattern stateB = b.Get(pbx, pby).State();
+            if(!iCanConnect(stateA, stateB, a2b))
+                return false;
+
+            if(a2b % 2 == 0)
+                pax = ++pbx;
+            else 
+                pay = ++pby;
+        }
+        return true;
+    }
+    bool Validate(const std::vector<QChunk*> &chunks, int len)
+    {
+        if(len * len != chunks.size())
+        {
+            std::println("[ERROR] Invalid size!");
+            return false;
+        }
+        for (QChunk* chunk : chunks) 
+        {
+            if(!chunk)
+            {
+                std::println("[ERROR] null chunk found!");
+                return false;
+            }
+            for (QPattern p : *chunk) 
+            {
+                if(!p.IsCollapsed())
+                {
+                    std::println("[ERROR] Found non collapsed cell!");
+                    return false;
+                }
+            }
+        }
+
+        for (int y = 0; y < len; y++) 
+        {
+            for (int x = 0; x < len; x++) 
+            {
+                QChunk &cur = *chunks[y * len + x];
+                for(int dir = 0; dir < 4; dir++)
+                {
+                    int ox = iX(x, dir);
+                    int oy = iY(y, dir);
+
+                    if(ox < 0 || oy < 0 || ox >= len || oy >= len)
+                        continue;
+                    const QChunk &other = *chunks[oy * len + ox];
+                    if(!iValidateBorders(cur, other, dir))
+                    {
+                        std::println("[ERROR] Chunk ({},{}) cant connect with chunk ({},{})", x, y, ox, oy);
+                        return false;
+                    }
+                }
+            }
+        }
+        return true;
+    }
+}
