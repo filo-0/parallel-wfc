@@ -1,3 +1,0 @@
-/home/lofi/repos/uni/parallel-computing/parallel-wfc/build/CMakeFiles/pwfc.dir
-/home/lofi/repos/uni/parallel-computing/parallel-wfc/build/CMakeFiles/edit_cache.dir
-/home/lofi/repos/uni/parallel-computing/parallel-wfc/build/CMakeFiles/rebuild_cache.dir
