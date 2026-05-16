@@ -7,7 +7,10 @@
 #include <iostream>
 #include <vector>
 
+#include "debug.hpp"
 #include "pwfc.hpp"
+
+
 
 static inline int iChunkIdx(int i, int j) { return i * 3 + j; }
 static inline int iRank(int x, int y, int dim) 
@@ -16,6 +19,49 @@ static inline int iRank(int x, int y, int dim)
         return MPI_PROC_NULL;
     return y * dim + x;
 }
+
+
+static PWFC::QChunk *iShareChunks(int dim, int rank, int chunkIdx, int pivotX, int pivotY, int offsetX, int offsetY, 
+    std::vector<PWFC::QChunk> &intChunks, std::vector<PWFC::QChunk> &extChunks, bool out)
+{
+    // The coordinate ot the current node
+    int rankX = rank % dim;
+    int rankY = rank / dim;
+
+    // The direction of the receiving chunk in local coordinates
+    int extDY = chunkIdx / 3 - 1;
+    int extDX = chunkIdx % 3 - 1;
+
+    // The direction to the node we recieve from
+    int rankDX = (offsetX >= 3) ? 1 : (offsetX < 0) ? -1 : 0;
+    int rankDY = (offsetY >= 3) ? 1 : (offsetY < 0) ? -1 : 0;
+
+    // The direction of the sending chunk in local coordinates
+    int intDX = (rankDX == 0 && rankDY != 0) ? (extDX + pivotX - 1) : -extDX;
+    int intDY = (rankDY == 0 && rankDX != 0) ? (extDY + pivotY - 1) : -extDY;
+
+    int extRank = iRank(rankX + rankDX, rankY + rankDY, dim);
+    int intRank = iRank(rankX - rankDX, rankY - rankDY, dim); // opposite side 
+
+    // send
+    PWFC::QChunk* extChunk = &extChunks[iChunkIdx(extDY + 1, extDX + 1)];
+    PWFC::QChunk* intChunk = &intChunks[iChunkIdx(intDY + 1, intDX + 1)];
+
+    MPI_Status status;
+    MPI_Sendrecv(
+        out ? extChunk : intChunk, sizeof(PWFC::QChunk), MPI_BYTE, out ? extRank : intRank, 0,
+        out ? intChunk : extChunk, sizeof(PWFC::QChunk), MPI_BYTE, out ? intRank : extRank, 0,
+        MPI_COMM_WORLD, &status);
+
+    if (extRank != MPI_PROC_NULL)
+        PWFC_LOG_INFO("{} external chunk ({},{}) {} node {}", out ? "Sent back" : "Received", extDX + 1, extDY + 1, out ? "to" : "from", extRank);
+    if (intRank != MPI_PROC_NULL)
+        PWFC_LOG_INFO("{} internal chunk ({},{}) {} node {}", out ? "Received back" : "Sent", intDX + 1, intDY + 1, out ? "from" : "to", intRank);
+
+    PWFC::QChunk* sharedChunk = out ? intChunk : extChunk;
+    return extRank == MPI_PROC_NULL ? nullptr : sharedChunk;
+}
+
 int main(int argc, char** argv) 
 {
     // 1) Initialize the MPI environment
@@ -25,15 +71,15 @@ int main(int argc, char** argv)
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    // Enforce exactly 4 computing nodes
-    //
+    bool saveRun = true;
+  
     int dim = (int)std::round(std::sqrt((double) size));
-    if (size != 16) 
+    if (dim * dim != size) 
     {
         if (rank == 0) 
         {
-            std::cerr << "Error: This application must be run with exactly 4 processes." << std::endl;
-            std::cerr << "Usage: mpirun -np 4 ./your_executable" << std::endl;
+            std::println("Error: This application must be run with a perfect sqared processes count.");
+            std::println("Usage: mpirun -np <num_proc> <exec_path>");
         }
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
@@ -41,158 +87,61 @@ int main(int argc, char** argv)
     int rankX = rank % dim;
     int rankY = rank / dim;
 
-    // 2) Allocate local memory for the 3x3 chunk section (9 chunks total per node)
-    std::vector<PWFC::QChunk> localChunksData(9);
-    std::vector<PWFC::QChunk> sharedChunksData(9);
-    std::array<PWFC::QChunk*, 9> localChunksRef;
+    std::vector<PWFC::QChunk> localChunksData(9); // The 3x3 cells of local chunks
+    std::vector<PWFC::QChunk> sharedChunksData(9); // The 3x3 buffer of chunks to load from neighbor nodes
+    std::array<PWFC::QChunk*, 9> localChunksRef  = { }; // The 3x3 array of chunk references to send to PWFC
 
-    for(int run = 0; run < 9; run++)
+    for(int round = 0; round < 9; round++)
     {
-        int pivotX = run % 3;
-        int pivotY = run / 3;
+        int pivotX = round % 3;
+        int pivotY = round / 3;
 
-        // Gather neighbor chunks 
+        // Select the chunks to use during this round
         for (int chunkIdx = 0; chunkIdx < 9; chunkIdx++) 
         {
             int offsetX = pivotX + chunkIdx % 3 - 1;
             int offsetY = pivotY + chunkIdx / 3 - 1;
 
             PWFC::QChunk *chunk = nullptr;
-            if(offsetX < 0 || offsetY < 0 || offsetX >= 3 || offsetY >= 3) // activate send and recieve 
-            {
-                int recvDY = chunkIdx / 3 - 1;
-                int recvDX = chunkIdx % 3 - 1;
-
-                int rankDX = (offsetX >= 3) ? 1 : (offsetX < 0) ? -1 : 0;
-                int rankDY = (offsetY >= 3) ? 1 : (offsetY < 0) ? -1 : 0;
-
-                int sendDX;
-                int sendDY;
-                if(rankDX == 0 && rankDY != 0)
-                {
-                    sendDX = recvDX + pivotX - 1;
-                    sendDY = -recvDY;
-                }
-                else if(rankDY == 0 && rankDX != 0)
-                {
-                    sendDX = -recvDX;
-                    sendDY = recvDY + pivotY - 1;
-                }
-                else
-                {
-                    sendDX = -recvDX;
-                    sendDY = -recvDY;
-                }
-
-                int from = iRank(rankX + rankDX, rankY + rankDY, dim);
-                int to   = iRank(rankX - rankDX, rankY - rankDY, dim); // opposite side 
-                
-                // send 
-                
-                PWFC::QChunk *recvChunk = &sharedChunksData[iChunkIdx(recvDY + 1,  recvDX + 1)];
-                PWFC::QChunk *sendChunk = &localChunksData[iChunkIdx(sendDY + 1, sendDX + 1)];
-
-                if(from == MPI_PROC_NULL) 
-                    chunk = nullptr;
-                else 
-                    chunk = recvChunk;
-                
-                MPI_Status status;
-                MPI_Sendrecv(
-                        sendChunk, sizeof(PWFC::QChunk), MPI_BYTE, to  , 0,
-                        recvChunk, sizeof(PWFC::QChunk), MPI_BYTE, from, 0,
-                        MPI_COMM_WORLD, &status);
-
-                if(to != MPI_PROC_NULL)
-                    std::cout << "Node " << rank << " sent chunk [" << sendDX + 1 << "," << sendDY + 1 << "] to node " << to << "\n";
-                if (from != MPI_PROC_NULL) 
-                    std::cout << "Node " << rank << " received chunk [" << recvDX + 1 << "," << recvDY + 1 << "] from node " << status.MPI_SOURCE << "\n";
-            }
+            if (offsetX < 0 || offsetY < 0 || offsetX >= 3 || offsetY >= 3) // activate send and recieve 
+                chunk = iShareChunks(dim, rank, chunkIdx, pivotX, pivotY, offsetX, offsetY, localChunksData, sharedChunksData, false);
             else chunk = &localChunksData[iChunkIdx(offsetY, offsetX)];
-
-            if(chunkIdx == 4 && rank == 0)
-            {
-                std::cout << "Running wfc on node " << rank << ", pivot chunk " << iChunkIdx(offsetY, offsetX) << "\n";
-            }
 
             localChunksRef[chunkIdx] = chunk;
         }
         
         // Execute the algorithm
-        int seed = time(nullptr); 
-        int err = PWFC::Generate(localChunksRef, seed + rank + run * 199);
-        if(err)
-            std::cout << "Wave function collapse encounterd an error!\n";
+        int seed = (int)time(nullptr); 
+        int err = PWFC::Generate(localChunksRef, seed + rank + round * 199);
+        if (err)
+        {
+            PWFC_LOG_ERROR("WFC Generation failed!");
+        }
 
-        std::string fileName = std::format("runs/run_{}_node_{}.txt", run, rank);
-        std::fstream file(fileName, std::ios::out);
-        PWFC::PrintQChunk(*localChunksRef[4], file);
+        if (saveRun)
+        {
+            std::string fileName = std::format("runs/run_{}_node_{}.txt", round, rank);
+            std::fstream file(fileName, std::ios::out);
+            PWFC::PrintQChunk(*localChunksRef[4], file);
+        }
+
 
         // Send back and recieve updated chunks
         for (int chunkIdx = 0; chunkIdx < 9; chunkIdx++) 
         {
-            if(chunkIdx == 4) 
+            if(chunkIdx == 4) // No need to exchange from central chunk
                 continue;
 
             int offsetX = pivotX + chunkIdx % 3 - 1;
             int offsetY = pivotY + chunkIdx / 3 - 1;
             if(offsetX < 0 || offsetY < 0 || offsetX >= 3 || offsetY >= 3) // activate send and recieve 
-            {
-                int sendDY = chunkIdx / 3 - 1;
-                int sendDX = chunkIdx % 3 - 1;
-
-                int rankDX = (offsetX >= 3) ? 1 : (offsetX < 0) ? -1 : 0;
-                int rankDY = (offsetY >= 3) ? 1 : (offsetY < 0) ? -1 : 0;
-
-                int recvDX;
-                int recvDY;
-                if(rankDX == 0 && rankDY != 0)
-                {
-                    recvDX = sendDX + pivotX - 1;
-                    recvDY = -sendDY; 
-                }
-                else if(rankDY == 0 && rankDX != 0)
-                {
-                    recvDX = -sendDX;
-                    recvDY = sendDY + pivotY - 1;
-                }
-                else
-                {
-                    recvDX = -sendDX;
-                    recvDY = -sendDY;
-                }
-
-                int to   = iRank(rankX + rankDX, rankY + rankDY, dim);
-                int from = iRank(rankX - rankDX, rankY - rankDY, dim); // opposite side 
-                
-                // send 
-                
-                PWFC::QChunk *recvChunk = &localChunksData[iChunkIdx(recvDY + 1,  recvDX + 1)];
-                PWFC::QChunk *sendChunk = &sharedChunksData[iChunkIdx(sendDY + 1, sendDX + 1)];
-
-                MPI_Status status;
-                MPI_Sendrecv(
-                        sendChunk, sizeof(PWFC::QChunk), MPI_BYTE, to  , 0,
-                        recvChunk, sizeof(PWFC::QChunk), MPI_BYTE, from, 0,
-                        MPI_COMM_WORLD, &status);
-
-                if(to != MPI_PROC_NULL)
-                    std::cout << "Node " << rank << " sent back chunk [" << sendDX + 1 << "," << sendDY + 1 << "] to node " << to << "\n";
-                if (from != MPI_PROC_NULL) 
-                    std::cout << "Node " << rank << " received back chunk [" << recvDX + 1 << "," << recvDY + 1 << "] from node " << status.MPI_SOURCE << "\n";
-            }
+                iShareChunks(dim, rank, chunkIdx, pivotX, pivotY, offsetX, offsetY, localChunksData, sharedChunksData, true);
         }
-        
-        MPI_Barrier(MPI_COMM_WORLD);
-        
-        std::cout << std::endl;
-
-        MPI_Barrier(MPI_COMM_WORLD);
     }
 
-    size_t sendingBytes = 9 * sizeof(PWFC::QChunk);
+    int sendingBytes = 9 * sizeof(PWFC::QChunk);
 
-    // 4) Prepare memory on the root node to receive the 9 * 4 = 36 chunks
+    // Final global buffer
     std::vector<PWFC::QChunk> globalChunksData;
     if (rank == 0) 
         globalChunksData.resize(9 * size); 
@@ -208,7 +157,7 @@ int main(int argc, char** argv)
     // Rank 0 now possesses the entire map and can process/print it
     if (rank == 0) 
     {
-        std::cout << "Successfully generated and gathered " << 9 * size << " chunks from " << size << " nodes." << std::endl;
+        PWFC_LOG_INFO("Successfully generated and gathered {} chunks from {} nodes.", 9 * size, size);
         std::vector<PWFC::QChunk*> buf;
         for (int y = 0; y < 3 * dim; y++) 
         {
@@ -224,41 +173,14 @@ int main(int argc, char** argv)
         }
         
         bool validated = PWFC::Validate(buf, 3 * dim);
-        if(!validated)
-            std::cout << "There was an error in the final check :(\n";
+        if (!validated)
+            PWFC_LOG_ERROR("There was an error in the final check :(");
         else 
-            std::cout << "There was no error in the final check :)\n";
+            PWFC_LOG_INFO("There was no error in the final check :)");
     }
 
 
     // Clean up and finalize
     MPI_Finalize();
     return 0;
-
-    /*std::vector<PWFC::QChunk> localChunksData(25);
-    std::array<PWFC::QChunk*, 9> localChunkRef;
-    for(int r = 0; r < 9; r++)
-    {
-        int px = r % 3 + 1;
-        int py = r / 3 + 1;
-        for(int c = 0; c < 9; c++)
-        {
-            int i = py + c / 3 - 1;
-            int j = px + c % 3 - 1;
-
-            PWFC::QChunk *chunk = nullptr;
-            chunk = &localChunksData[i * 5 + j];
-            
-            localChunkRef[c] = chunk;
-        }
-
-        int err = PWFC::Generate(localChunkRef, 1234 + r);
-        if(err)
-            std::cout << "Error generating chunk " << px + py * 5 << "\n";
-    }
-
-    PWFC::PrintQChunk(localChunksData[17]);
-    PWFC::PrintQChunk(localChunksData[12]);
-    PWFC::PrintQChunk(localChunksData[7]);*/ 
-
 }

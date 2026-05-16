@@ -1,4 +1,6 @@
 build
 runs
+out 
 
+.vs
 .cache

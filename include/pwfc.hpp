@@ -164,6 +164,13 @@ namespace PWFC
         PATTERN_BLIND_LEFT,
     };
 
+    inline int FindNext(std::bitset<MAX_ENTROPY> bitset, int i)
+    {
+        for (int j = i + 1; j < MAX_ENTROPY; j++)
+            if (bitset[j]) return j;
+        return MAX_ENTROPY;
+    }
+    inline int FindFirst(std::bitset<MAX_ENTROPY> bitset) { return FindNext(bitset, -1); }
     class QPattern
     {
     public:
@@ -173,14 +180,14 @@ namespace PWFC
         { 
             int Idx;
             const std::bitset<MAX_ENTROPY> *Ref;
-            inline void operator++() { Idx = Ref->_Find_next(Idx); } 
+            inline void operator++() { Idx = FindNext(*Ref, Idx); } 
             inline bool operator!=(const Iterator &other) const { return this->Idx != other.Idx; }
         };
-        Iterator begin() const { return { (int)_State._Find_first(), &_State }; }
+        Iterator begin() const { return { FindFirst(_State), &_State }; }
         Iterator end()   const { return { (int)_State.size(), &_State }; }
 
         inline void Clear(int i)          { _State.reset(i); }
-        inline Pattern State()         const { return Entropy() ? PATTERNS[_State._Find_first()] : Pattern(PATTERN_FILLED); }
+        inline Pattern State()         const { return Entropy() ? PATTERNS[FindFirst(_State)] : Pattern(PATTERN_FILLED); }
         inline Pattern State(int i)    const { return PATTERNS[i]; }
         inline bool HasState(int i) const { return _State.test(i); }
         inline int  Entropy()       const { return _State.count(); }

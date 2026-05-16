@@ -6,6 +6,7 @@
 #include <iostream>
 
 #include "pwfc.hpp"
+#include "debug.hpp"
 
 namespace PWFC 
 {
@@ -69,12 +70,8 @@ namespace PWFC
             else if(toX < 0)          { toChunkId -= 1; toX = CHUNK_LEN - 1; }
             else if(toY < 0)          { toChunkId -= 3; toY = CHUNK_LEN - 1; }
             
-            //assert(toChunkId >= 0 && toChunkId < 9);
-            if(toChunkId >= 9 || toChunkId < 0)
-            {
-                std::println("[WARNING] Propagation went out of bound!");
-                continue;
-            }
+            //PWFC_ASSERT(toChunkId >= 0 && toChunkId < 9, "Propagation went out of bound");
+
             if(chunks[toChunkId] == nullptr)
                 continue;
 
@@ -105,9 +102,10 @@ namespace PWFC
             }
             if (!changed)
                 continue;
+
             if(to.Entropy() == 0)
             {
-                std::println("[WARNING] Cell collapsed to zero entropy!");
+                PWFC_LOG_ERROR("Cell was collapsed to zero entropy!");
                 continue;
             }
 
@@ -214,21 +212,22 @@ namespace PWFC
     {
         if(len * len != chunks.size())
         {
-            std::println("[ERROR] Invalid size!");
+            PWFC_LOG_ERROR("[ERROR] Invalid chunk array size!");
             return false;
         }
+
         for (QChunk* chunk : chunks) 
         {
             if(!chunk)
             {
-                std::println("[ERROR] null chunk found!");
+                PWFC_LOG_ERROR("[ERROR] null chunk found!");
                 return false;
             }
             for (QPattern p : *chunk) 
             {
                 if(!p.IsCollapsed())
                 {
-                    std::println("[ERROR] Found non collapsed cell!");
+                    PWFC_LOG_ERROR("[ERROR] Found non collapsed cell!");
                     return false;
                 }
             }
@@ -249,7 +248,7 @@ namespace PWFC
                     const QChunk &other = *chunks[oy * len + ox];
                     if(!iValidateBorders(cur, other, dir))
                     {
-                        std::println("[ERROR] Chunk ({},{}) cant connect with chunk ({},{})", x, y, ox, oy);
+                        PWFC_LOG_ERROR("[ERROR] Chunk ({},{}) cant connect with chunk ({},{})", x, y, ox, oy);
                         return false;
                     }
                 }
