@@ -1,6 +1,5 @@
 
 #include <cassert>
-#include <print>
 #include <random>
 #include <vector>
 #include <iostream>
@@ -45,7 +44,7 @@ namespace PWFC
         return aOpen == bOpen;
     }
     
-    static void iPropagate(std::array<QChunk*, 9> &chunks, int centerX, int centerY)
+    static ErrCode iPropagate(std::array<QChunk*, 9> &chunks, int centerX, int centerY)
     {
         struct iWave { int Chunk, FromX, FromY, Dir; };
         std::vector<iWave> stack = 
@@ -55,7 +54,8 @@ namespace PWFC
             {4, centerX, centerY, 2 },
             {4, centerX, centerY, 3 },
         };
-
+        
+        bool zeroEntropy = false;
         while(!stack.empty())
         {
             iWave wave = stack.back();
@@ -69,14 +69,17 @@ namespace PWFC
             else if(toY >= CHUNK_LEN) { toChunkId += 3; toY = 0; } 
             else if(toX < 0)          { toChunkId -= 1; toX = CHUNK_LEN - 1; }
             else if(toY < 0)          { toChunkId -= 3; toY = CHUNK_LEN - 1; }
-            
-            //PWFC_ASSERT(toChunkId >= 0 && toChunkId < 9, "Propagation went out of bound");
 
+            if(toChunkId < 0 || toChunkId >= 9)
+            {
+                PWFC_LOG_ERROR("Propagation went out of the 3x3 chunk scope!");
+                return ERR_OUT_OF_CHUNK;
+            }
             if(chunks[toChunkId] == nullptr)
                 continue;
 
-            auto &fromChunk = *chunks[wave.Chunk];
-            auto &toChunk   = *chunks[toChunkId];
+            QChunk &fromChunk = *chunks[wave.Chunk];
+            QChunk &toChunk   = *chunks[toChunkId];
 
             const QPattern &from = fromChunk.Get(wave.FromX, wave.FromY);
                   QPattern &to   = toChunk  .Get(toX, toY);
@@ -106,19 +109,21 @@ namespace PWFC
             if(to.Entropy() == 0)
             {
                 PWFC_LOG_ERROR("Cell was collapsed to zero entropy!");
-                continue;
+                return ERR_ZERO_ENTROPY;
             }
 
             for (int d = 0; d < 4; d++)
                 if (d != iOpposite(wave.Dir))
                     stack.emplace_back(toChunkId, toX, toY, d);
         }
+
+        return ERR_OK;
     }
 
-    int Generate(std::array<QChunk*, 9>& chunks, int seed)
+    ErrCode Generate(std::array<QChunk*, 9>& chunks, unsigned int seed)
     {
         if(chunks[4] == nullptr)
-            return 1;
+            return ERR_INVALID_INPUT;
 
         auto &pivot = *chunks[4];
         std::vector<int> indices;
@@ -133,8 +138,6 @@ namespace PWFC
                 QPattern &q = pivot.Get(idx);
                 if(q.IsCollapsed())
                     continue;
-                if(q.Entropy() == 0)
-                    return 1;
                 if(q.Entropy() == minEntropy)
                 {
                     indices.push_back(idx);
@@ -152,10 +155,12 @@ namespace PWFC
             int idx = indices[rand() % indices.size()];
             pivot.Get(idx).Collapse(rand);
 
-            iPropagate(chunks, iX(idx), iY(idx));
+            ErrCode err = iPropagate(chunks, iX(idx), iY(idx));
+            if(err)
+                return err;
         }
 
-        return 0;
+        return ERR_OK;
     }
 
 

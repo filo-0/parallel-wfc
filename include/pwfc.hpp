@@ -1,5 +1,9 @@
+#pragma once
+
 #include <array>
+#include <bit>
 #include <bitset>
+#include <cstdint>
 #include <iostream>
 #include <random>
 
@@ -132,6 +136,13 @@ namespace PWFC
         DIR_DOWN  = 2,
         DIR_LEFT  = 3 
     };
+    enum ErrCode : int 
+    {
+        ERR_OK,
+        ERR_ZERO_ENTROPY,
+        ERR_OUT_OF_CHUNK,
+        ERR_INVALID_INPUT
+    };
     
     class Pattern 
     {
@@ -164,13 +175,13 @@ namespace PWFC
         PATTERN_BLIND_LEFT,
     };
 
-    inline int FindNext(std::bitset<MAX_ENTROPY> bitset, int i)
+    inline int FindFirst(std::bitset<MAX_ENTROPY> bitset, int i = -1)
     {
-        for (int j = i + 1; j < MAX_ENTROPY; j++)
-            if (bitset[j]) return j;
-        return MAX_ENTROPY;
+        static_assert(MAX_ENTROPY == sizeof(uint16_t) * 8, "MAX_ENTROPY is no more 16!");
+
+        int count = std::countr_zero((uint16_t)(bitset.to_ulong() >> (i + 1)));
+        return count == 16 ? count : i + count + 1;
     }
-    inline int FindFirst(std::bitset<MAX_ENTROPY> bitset) { return FindNext(bitset, -1); }
     class QPattern
     {
     public:
@@ -180,7 +191,7 @@ namespace PWFC
         { 
             int Idx;
             const std::bitset<MAX_ENTROPY> *Ref;
-            inline void operator++() { Idx = FindNext(*Ref, Idx); } 
+            inline void operator++() { Idx = FindFirst(*Ref, Idx); } 
             inline bool operator!=(const Iterator &other) const { return this->Idx != other.Idx; }
         };
         Iterator begin() const { return { FindFirst(_State), &_State }; }
@@ -211,7 +222,7 @@ namespace PWFC
         std::array<QPattern, CHUNK_SIZE> _Data = { };
     };
     
-    int Generate(std::array<QChunk*, 9> &chunks, int seed);
+    ErrCode Generate(std::array<QChunk*, 9> &chunks, unsigned int seed);
     bool Validate(const std::vector<QChunk*> &chunks, int len);
     void PrintQChunk(QChunk& chunk, std::ostream &stream = std::cout);
 }

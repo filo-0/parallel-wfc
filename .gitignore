@@ -2,5 +2,8 @@ build
 runs
 out 
 
+CMakeSettings.json 
+compile_commands.json
+
 .vs
 .cache
