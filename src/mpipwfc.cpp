@@ -4,16 +4,24 @@
 #include <fstream>
 #include <mpi.h>
 #include <print>
+#include <string>
+#include <string_view>
 #include <vector>
 
 #include "debug.hpp"
 #include "pwfc.hpp"
 #include "mpiwfc.hpp"
 
+void iParseArgs(std::string &outpath, unsigned int &seed, int &length, char **argv, int argc);
 int main(int argc, char** argv) 
 {
     bool saveRun = true;
     int dim, size, rank;
+    
+    int length = 128;
+    unsigned int seed = time(nullptr);
+    std::string outpath = "out.ppm";
+    iParseArgs(outpath, seed, length, argv, argc);
 
     int error = PWFC::InitMPI(rank, dim, size, argc, argv);
     if (error) 
@@ -27,7 +35,7 @@ int main(int argc, char** argv)
     }
 
     std::vector<PWFC::QChunk> result;
-    error = PWFC::RunMPI(result, rank, dim, size);
+    error = PWFC::RunMPI(result, rank, dim, size, length, seed);
     if(error)
     {
         PWFC_LOG_ERROR("A node encountered an error generating the map!");
@@ -35,10 +43,38 @@ int main(int argc, char** argv)
     }
     
     if(rank == 0)
-        PWFC::SaveToImage(result, dim, std::format("runs/wfc{}x{}.ppm", dim, dim));
+        PWFC::SaveToImage(result, dim, length, outpath);
 
     PWFC::QuitMPI();
     return 0;
+}
+void iParseArgs(std::string &outpath, unsigned int &seed, int &length, char **argv, int argc)
+{
+    for(int i = 1; i < argc; i++)
+    {
+        std::string_view opt = argv[i];
+        if(opt == "-o" || opt == "--output")
+        {
+            if(i + 1 >= argc)
+                break;
+            i++;
+            outpath = argv[i];
+        }
+        else if(opt == "-s" || opt == "--seed")
+        {
+            if(i + 1 >= argc)
+                break;
+            i++;
+            seed = std::stoul(argv[i]);
+        }
+        else if(opt == "-l" || opt == "--length")
+        {
+            if(i + 1 >= argc)
+                break;
+            i++;
+            length = std::stoi(argv[i]);
+        }
+    }
 }
 
 namespace PWFC 
@@ -58,7 +94,7 @@ namespace PWFC
             return error;
 
         // Invalid graph size
-        dim = (int)std::round(std::sqrt((double) size));
+        dim = (int)std::round(std::sqrt((double)size));
         if(dim * dim != size)
             error = 1;
 
@@ -66,6 +102,7 @@ namespace PWFC
     }
     void QuitMPI() { MPI_Finalize(); }
 
+    static inline int iCeilDiv(int x, int y) { return (x + y - 1) / y; }
     static inline int iChunkIdx(int i, int j) { return i * 3 + j; }
     static inline int iRank(int x, int y, int dim) 
     {
@@ -96,28 +133,34 @@ namespace PWFC
         int intRank = iRank(rankX - rankDX, rankY - rankDY, dim); // opposite side 
 
         // send
-        PWFC::QChunk* extChunk = &extChunks[iChunkIdx(extDY + 1, extDX + 1)];
-        PWFC::QChunk* intChunk = &intChunks[iChunkIdx(intDY + 1, intDX + 1)];
+        PWFC::QChunk &extChunk = extChunks[iChunkIdx(extDY + 1, extDX + 1)];
+        PWFC::QChunk &intChunk = intChunks[iChunkIdx(intDY + 1, intDX + 1)];
+        int chunkDataSize = intChunk.Size() * sizeof(PWFC::QPattern);
 
         MPI_Status status;
         MPI_Sendrecv(
-                out ? extChunk : intChunk, sizeof(PWFC::QChunk), MPI_BYTE, out ? extRank : intRank, 0,
-                out ? intChunk : extChunk, sizeof(PWFC::QChunk), MPI_BYTE, out ? intRank : extRank, 0,
+                out ? extChunk.Data() : intChunk.Data(), chunkDataSize, MPI_BYTE, out ? extRank : intRank, 0,
+                out ? intChunk.Data() : extChunk.Data(), chunkDataSize, MPI_BYTE, out ? intRank : extRank, 0,
                 MPI_COMM_WORLD, &status);
 
         if (extRank != MPI_PROC_NULL)
-            PWFC_LOG_INFO("{} external chunk ({},{}) {} node {}", out ? "Sent back" : "Received", extDX + 1, extDY + 1, out ? "to" : "from", extRank);
+            PWFC_LOG_INFO("[NODE_{}] {} external chunk ({},{}) {} node {}", rank, out ? "Sent back" : "Received", extDX + 1, extDY + 1, out ? "to" : "from", extRank);
         if (intRank != MPI_PROC_NULL)
-            PWFC_LOG_INFO("{} internal chunk ({},{}) {} node {}", out ? "Received back" : "Sent", intDX + 1, intDY + 1, out ? "from" : "to", intRank);
+            PWFC_LOG_INFO("[NODE_{}] {} internal chunk ({},{}) {} node {}", rank, out ? "Received back" : "Sent", intDX + 1, intDY + 1, out ? "from" : "to", intRank);
 
-        PWFC::QChunk* sharedChunk = out ? intChunk : extChunk;
+        PWFC::QChunk* sharedChunk = out ? &intChunk : &extChunk;
         return extRank == MPI_PROC_NULL ? nullptr : sharedChunk;
     }
-    int RunMPI(std::vector<QChunk> &result, int rank, int dim, int size)
+    int RunMPI(std::vector<QChunk> &result, int rank, int dim, int size, int length, unsigned int seed)
     {
-        std::vector<PWFC::QChunk> localChunksData(9); // The 3x3 cells of local chunks
-        std::vector<PWFC::QChunk> sharedChunksData(9); // The 3x3 buffer of chunks to load from neighbor nodes
-        std::array<PWFC::QChunk*, 9> localChunksRef  = { }; // The 3x3 array of chunk references to send to PWFC
+        int chunkLength = std::max(iCeilDiv(length, dim * 3), MIN_CHUNK_LENGTH);
+        int chunkSize = chunkLength * chunkLength;
+        std::vector<PWFC::QChunk> localChunksData(9, chunkLength); // The 3x3 cells of local chunks
+        std::vector<PWFC::QChunk> sharedChunksData(9, chunkLength); // The 3x3 buffer of chunks to load from neighbor nodes
+        std::array<PWFC::QChunk*, 9> localChunksRef = { }; // The 3x3 array of chunk references to send to PWFC
+
+        PWFC_LOG_INFO("[NODE_{}] Starting WFC with chunks of dimension {}x{}", rank, chunkLength, chunkLength);
+        PWFC_LOG_INFO("[NODE_{}] Computation will produce a map {}\% bigger", rank, (float)(chunkLength * dim * 3 - length) / length * 100);
 
         for(int round = 0; round < 9; round++)
         {
@@ -139,8 +182,7 @@ namespace PWFC
             }
 
             // Execute the algorithm
-            int seed = (int)time(nullptr); 
-            ErrCode err = Generate(localChunksRef, seed + rank + round * 199);
+            ErrCode err = Generate(localChunksRef, seed + rank + round * 33);
             if (err)
                 return err;
 
@@ -157,19 +199,37 @@ namespace PWFC
             }
         }
 
-        int sendingBytes = 9 * sizeof(PWFC::QChunk);
+        PWFC_LOG_INFO("[NODE_{}] Successfully computed the 3x3 local chunks!", rank);
 
         // Final global buffer
         if (rank == 0) 
-            result.resize(9 * size); 
+            result.resize(9 * size, chunkLength); 
 
         // Gather all local 3x3 sections into the global map on Rank 0
-        MPI_Gather(
-                localChunksData.data(), sendingBytes, MPI_BYTE,  // Send buffer
-                result.data(), sendingBytes, MPI_BYTE, // Receive buffer (only relevant on root)
-                0,                                                     // Root node receiving the data
-                MPI_COMM_WORLD                                         // Communicator
-                );
+        int sendingBytes = chunkSize * sizeof(QPattern);
+        std::vector<QPattern> localBuffer(chunkSize * size); 
+        for(int i = 0; i < 9; i++)
+        {
+            MPI_Gather(
+                localChunksData[i].Data(), sendingBytes, MPI_BYTE, // Send buffer
+                localBuffer.data(), sendingBytes, MPI_BYTE,     // Receive buffer (only relevant on root)
+                0,                                              // Root node receiving the data
+                MPI_COMM_WORLD                                  // Communicator
+            );
+
+            // copy to the result buffer 
+            if(rank == 0)
+            {
+                for(int r = 0; r < size; r++)
+                {
+                    std::copy(
+                        localBuffer.begin() + r * chunkSize, 
+                        localBuffer.begin() + (r + 1) * chunkSize,
+                        result[r * 9 + i].begin()
+                    );
+                }
+            }
+        }
 
         // Rank 0 now possesses the entire map and can process/print it
         if (rank == 0) 
@@ -199,11 +259,17 @@ namespace PWFC
         return 0;
     }
 
-    void SaveToImage(const std::vector<PWFC::QChunk>& result, int dim, const std::string& filepath) 
+    void SaveToImage(const std::vector<PWFC::QChunk>& result, int dim, int length, const std::string& filepath) 
     {
+        if(result.empty())
+            return;
+
+
+        int chunkLen = result[0].Length();
         int chunksPerSide = 3 * dim;
-        int width  = chunksPerSide * CHUNK_LEN * PATTERN_SIZE;
-        int height = chunksPerSide * CHUNK_LEN * PATTERN_SIZE;
+        int width  = length * PATTERN_SIZE;
+        int height = length * PATTERN_SIZE;
+        PWFC_ASSERT(chunksPerSide * chunkLen >= length, "Invalid chunk size, too small! [real={}, asked={}]", chunksPerSide * chunkLen, length);
 
         std::ofstream out(filepath);
         if (!out.is_open()) 
@@ -219,12 +285,12 @@ namespace PWFC
             for (int px = 0; px < width; ++px) 
             {
                 // Global chunk coordinates
-                int cx = px / (CHUNK_LEN * PATTERN_SIZE);
-                int cy = py / (CHUNK_LEN * PATTERN_SIZE);
+                int cx = px / (chunkLen * PATTERN_SIZE);
+                int cy = py / (chunkLen * PATTERN_SIZE);
                 
                 // Pattern coordinates inside the current chunk
-                int p_x = (px / PATTERN_SIZE) % CHUNK_LEN;
-                int p_y = (py / PATTERN_SIZE) % CHUNK_LEN;
+                int p_x = (px / PATTERN_SIZE) % chunkLen;
+                int p_y = (py / PATTERN_SIZE) % chunkLen;
                 
                 // Pixel coordinates inside the pattern
                 int px_in = px % PATTERN_SIZE;
@@ -244,7 +310,7 @@ namespace PWFC
                 const PWFC::QChunk& chunk = result[chunk_index];
                 
                 // Assuming chunk.Get() accepts a linear index y * CHUNK_LEN + x
-                const PWFC::QPattern& q = chunk.Get(p_y * CHUNK_LEN + p_x);
+                const PWFC::QPattern& q = chunk.Get(p_y * chunkLen + p_x);
                 
                 if (!q.IsCollapsed()) 
                 {

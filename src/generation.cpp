@@ -26,20 +26,20 @@ namespace PWFC
         _State.set(state);
     }
     static inline int iOpposite(int dir) { return (dir + 2) % 4; }
-    static inline int iIdx(int x, int y) { return y * CHUNK_LEN + x; }
+    static inline int iIdx(int x, int y, int chunkLen) { return y * chunkLen + x; }
     
-    static inline int iX(int idx) { return idx % CHUNK_LEN; }
-    static inline int iY(int idx) { return idx / CHUNK_LEN; }
+    static inline int iX(int idx, int chunkLen) { return idx % chunkLen; }
+    static inline int iY(int idx, int chunkLen) { return idx / chunkLen; }
 
-    static inline int iX(int x, int dir) { return x + (2 - dir) % 2; }
-    static inline int iY(int y, int dir) { return y + (1 - dir) % 2; }
+    static inline int iNextX(int x, int dir) { return x + (2 - dir) % 2; }
+    static inline int iNextY(int y, int dir) { return y + (1 - dir) % 2; }
     
     static inline bool iCanConnect(Pattern a, Pattern b, int a2b)
     {
         int b2a = iOpposite(a2b);
 
-        bool aOpen = a.Get(iX(1, a2b), iY(1, a2b));
-        bool bOpen = b.Get(iX(1, b2a), iY(1, b2a));
+        bool aOpen = a.Get(iNextX(1, a2b), iNextY(1, a2b));
+        bool bOpen = b.Get(iNextX(1, b2a), iNextY(1, b2a));
 
         return aOpen == bOpen;
     }
@@ -54,21 +54,21 @@ namespace PWFC
             {4, centerX, centerY, 2 },
             {4, centerX, centerY, 3 },
         };
-        
+        int chunkLen = chunks[4]->Length();
         bool zeroEntropy = false;
         while(!stack.empty())
         {
             iWave wave = stack.back();
             stack.pop_back();
             
-            int toX = iX(wave.FromX, wave.Dir);
-            int toY = iY(wave.FromY, wave.Dir);
+            int toX = iNextX(wave.FromX, wave.Dir);
+            int toY = iNextY(wave.FromY, wave.Dir);
             
             int toChunkId = wave.Chunk;
-            if     (toX >= CHUNK_LEN) { toChunkId += 1; toX = 0; }
-            else if(toY >= CHUNK_LEN) { toChunkId += 3; toY = 0; } 
-            else if(toX < 0)          { toChunkId -= 1; toX = CHUNK_LEN - 1; }
-            else if(toY < 0)          { toChunkId -= 3; toY = CHUNK_LEN - 1; }
+            if     (toX >= chunkLen) { toChunkId += 1; toX = 0; }
+            else if(toY >= chunkLen) { toChunkId += 3; toY = 0; } 
+            else if(toX < 0)          { toChunkId -= 1; toX = chunkLen - 1; }
+            else if(toY < 0)          { toChunkId -= 3; toY = chunkLen - 1; }
 
             if(toChunkId < 0 || toChunkId >= 9)
             {
@@ -122,18 +122,20 @@ namespace PWFC
 
     ErrCode Generate(std::array<QChunk*, 9>& chunks, unsigned int seed)
     {
-        if(chunks[4] == nullptr)
+        if(chunks[4] == nullptr || chunks[4]->Length() < MIN_CHUNK_LENGTH)
             return ERR_INVALID_INPUT;
 
         auto &pivot = *chunks[4];
         std::vector<int> indices;
         std::mt19937 rand(seed);
- 
+        int chunkLen = pivot.Length();
+        int chunkSize = chunkLen * chunkLen;
+
         while(true)
         {
             int minEntropy = MAX_ENTROPY;
             indices.clear();
-            for(int idx = 0; idx < CHUNK_SIZE; idx++)
+            for(int idx = 0; idx < chunkSize; idx++)
             {
                 QPattern &q = pivot.Get(idx);
                 if(q.IsCollapsed())
@@ -155,7 +157,7 @@ namespace PWFC
             int idx = indices[rand() % indices.size()];
             pivot.Get(idx).Collapse(rand);
 
-            ErrCode err = iPropagate(chunks, iX(idx), iY(idx));
+            ErrCode err = iPropagate(chunks, iX(idx, chunkLen), iY(idx, chunkLen));
             if(err)
                 return err;
         }
@@ -166,14 +168,15 @@ namespace PWFC
 
     void PrintQChunk(QChunk& chunk, std::ostream &stream) 
     {
-        char buffer[CHUNK_LEN * PATTERN_SIZE][CHUNK_LEN * PATTERN_SIZE];
+        int chunkLen = chunk.Length();
+        char buffer[chunkLen * PATTERN_SIZE][chunkLen * PATTERN_SIZE];
 
-        for (int y = 0; y < CHUNK_LEN; y++) 
+        for (int y = 0; y < chunkLen; y++) 
         {
-            for (int x = 0; x < CHUNK_LEN; x++) 
+            for (int x = 0; x < chunkLen; x++) 
             {
                 // Assuming Get(x, y) or Get(y * CHUNK_LEN + x) is available
-                QPattern& q = chunk.Get(y * CHUNK_LEN + x);
+                QPattern& q = chunk.Get(y * chunkLen + x);
 
                 bool collapsed = q.IsCollapsed();
                 // Fetch the collapsed state
@@ -183,9 +186,9 @@ namespace PWFC
                         buffer[y * PATTERN_SIZE + i][x * PATTERN_SIZE + j] = collapsed ? (state.Get(j, i) ? ' ' : '#') : '?';
             }
         }
-        for (int y = 0; y < CHUNK_LEN * PATTERN_SIZE; y++) 
+        for (int y = 0; y < chunkLen * PATTERN_SIZE; y++) 
         {
-            for (int x = 0; x < CHUNK_LEN * PATTERN_SIZE; x++) 
+            for (int x = 0; x < chunkLen * PATTERN_SIZE; x++) 
                 stream << ' ' << buffer[y][x];
             stream << "\n";
         }
@@ -193,13 +196,16 @@ namespace PWFC
 
     bool iValidateBorders(const QChunk &a, const QChunk &b, int a2b)
     {
+        PWFC_ASSERT(a.Length() == b.Length(), "Invalid chunk lengths!");
+
+        int chunkLen = a.Length();
         int b2a = iOpposite(a2b);
-        int pax = iX(1, a2b) / 2 * (CHUNK_LEN - 1);
-        int pay = iY(1, a2b) / 2 * (CHUNK_LEN - 1);
-        int pbx = iX(1, b2a) / 2 * (CHUNK_LEN - 1);
-        int pby = iY(1, b2a) / 2 * (CHUNK_LEN - 1);
+        int pax = iNextX(1, a2b) / 2 * (chunkLen - 1);
+        int pay = iNextY(1, a2b) / 2 * (chunkLen - 1);
+        int pbx = iNextX(1, b2a) / 2 * (chunkLen - 1);
+        int pby = iNextY(1, b2a) / 2 * (chunkLen - 1);
         
-        for (int i = 0; i < CHUNK_LEN; i++) 
+        for (int i = 0; i < chunkLen; i++) 
         {
             Pattern stateA = a.Get(pax, pay).State();
             Pattern stateB = b.Get(pbx, pby).State();
@@ -245,8 +251,8 @@ namespace PWFC
                 QChunk &cur = *chunks[y * len + x];
                 for(int dir = 0; dir < 4; dir++)
                 {
-                    int ox = iX(x, dir);
-                    int oy = iY(y, dir);
+                    int ox = iNextX(x, dir);
+                    int oy = iNextY(y, dir);
 
                     if(ox < 0 || oy < 0 || ox >= len || oy >= len)
                         continue;
