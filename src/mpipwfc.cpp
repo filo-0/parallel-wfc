@@ -1,10 +1,10 @@
 #include <chrono>
 #include <cmath>
 #include <ctime>
-#include <format>
+//#include <format>
 #include <fstream>
 #include <mpi.h>
-#include <print>
+//#include <print>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -16,7 +16,6 @@
 void iParseArgs(std::string &outpath, unsigned int &seed, int &length, char **argv, int argc);
 int main(int argc, char** argv) 
 {
-    bool saveRun = true;
     int dim, size, rank;
     
     int length = 128;
@@ -29,8 +28,8 @@ int main(int argc, char** argv)
     {
         if (rank == 0) 
         {
-            std::println("Error: This application must be run with a perfect sqared processes count.");
-            std::println("Usage: mpirun -np <num_proc> <exec_path>");
+            //std::println("Error: This application must be run with a perfect sqared processes count.");
+            //std::println("Usage: mpirun -np <num_proc> <exec_path>");
         }
         MPI_Abort(MPI_COMM_WORLD, error);
     }

@@ -43,6 +43,7 @@ namespace PWFC
 
         return aOpen == bOpen;
     }
+
     
     static ErrCode iPropagate(std::array<QChunk*, 9> &chunks, int centerX, int centerY)
     {
@@ -55,7 +56,6 @@ namespace PWFC
             {4, centerX, centerY, 3 },
         };
         int chunkLen = chunks[4]->Length();
-        bool zeroEntropy = false;
         while(!stack.empty())
         {
             iWave wave = stack.back();
@@ -169,7 +169,7 @@ namespace PWFC
     void PrintQChunk(QChunk& chunk, std::ostream &stream) 
     {
         int chunkLen = chunk.Length();
-        char buffer[chunkLen * PATTERN_SIZE][chunkLen * PATTERN_SIZE];
+        std::vector<std::vector<char>> buffer(chunkLen * PATTERN_SIZE, std::vector<char>(chunkLen * PATTERN_SIZE));
 
         for (int y = 0; y < chunkLen; y++) 
         {

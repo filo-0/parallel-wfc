@@ -70,7 +70,7 @@ namespace PWFC
         {
             static_assert(MAX_ENTROPY == sizeof(uint16_t) * 8, "MAX_ENTROPY is no more 16!");
 
-            int count = std::countr_zero((uint16_t)(bitset.to_ulong() >> (i + 1)));
+            int count = __builtin_ctz((uint32_t)(bitset.to_ulong() >> (i + 1)) | 0x10000);
             return count == 16 ? 16 : i + count + 1;
         }
     };

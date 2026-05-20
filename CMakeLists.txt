@@ -10,10 +10,12 @@ if(CMAKE_BUILD_TYPE STREQUAL "")
     set(CMAKE_BUILD_TYPE "Debug")
 endif()
 
+message("Build type set to ${CMAKE_BUILD_TYPE}")
+
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     add_compile_options(-O3)
 elseif(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    add_compile_options(-g)
+    add_compile_options(-g -Wall -Wextra -Wpedantic)
     add_compile_definitions(_DEBUG)
 endif()
 

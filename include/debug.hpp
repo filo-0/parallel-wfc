@@ -1,9 +1,8 @@
 #pragma once
-#include <print>
-
 
 #ifdef _DEBUG
 
+#include <print>
 #define PWFC_LOG_INFO(...) do { \
     std::print("[INFO] [{}:{}:{}] ", __FILE__, __FUNCTION__, __LINE__); \
     std::println(__VA_ARGS__); \
