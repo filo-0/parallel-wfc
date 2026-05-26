@@ -26,7 +26,7 @@ namespace PWFC
         _State.set(state);
     }
     static inline int iOpposite(int dir) { return (dir + 2) % 4; }
-    static inline int iIdx(int x, int y, int chunkLen) { return y * chunkLen + x; }
+    //static inline int iIdx(int x, int y, int chunkLen) { return y * chunkLen + x; }
     
     static inline int iX(int idx, int chunkLen) { return idx % chunkLen; }
     static inline int iY(int idx, int chunkLen) { return idx / chunkLen; }
@@ -114,7 +114,7 @@ namespace PWFC
 
             for (int d = 0; d < 4; d++)
                 if (d != iOpposite(wave.Dir))
-                    stack.emplace_back(toChunkId, toX, toY, d);
+                    stack.push_back({ toChunkId, toX, toY, d });
         }
 
         return ERR_OK;
@@ -221,9 +221,9 @@ namespace PWFC
     }
     bool Validate(const std::vector<QChunk*> &chunks, int len)
     {
-        if(len * len != chunks.size())
+        if(len * len != (int)chunks.size())
         {
-            PWFC_LOG_ERROR("[ERROR] Invalid chunk array size!");
+            PWFC_LOG_ERROR("Invalid chunk array size!");
             return false;
         }
 
@@ -231,14 +231,14 @@ namespace PWFC
         {
             if(!chunk)
             {
-                PWFC_LOG_ERROR("[ERROR] null chunk found!");
+                PWFC_LOG_ERROR("Null chunk found!");
                 return false;
             }
             for (QPattern p : *chunk) 
             {
                 if(!p.IsCollapsed())
                 {
-                    PWFC_LOG_ERROR("[ERROR] Found non collapsed cell!");
+                    PWFC_LOG_ERROR("Found non collapsed cell!");
                     return false;
                 }
             }
@@ -259,7 +259,7 @@ namespace PWFC
                     const QChunk &other = *chunks[oy * len + ox];
                     if(!iValidateBorders(cur, other, dir))
                     {
-                        PWFC_LOG_ERROR("[ERROR] Chunk ({},{}) cant connect with chunk ({},{})", x, y, ox, oy);
+                        PWFC_LOG_ERROR("Chunk (%d,%d) cant connect with chunk (%d,%d)", x, y, ox, oy);
                         return false;
                     }
                 }

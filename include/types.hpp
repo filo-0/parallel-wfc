@@ -69,10 +69,10 @@ namespace PWFC
     
         inline static int _FindFirst(std::bitset<MAX_ENTROPY> bitset, int i = -1)
         {
-            static_assert(MAX_ENTROPY == sizeof(uint16_t) * 8, "MAX_ENTROPY is no more 16!");
-
-            int count = std::countr_zero((uint16_t)(bitset.to_ulong() >> (i + 1)));
-            return count == 16 ? 16 : i + count + 1;
+            for(int j = i + 1; j < (int)bitset.size(); j++)
+                if(bitset[j])
+                    return j;
+            return bitset.size();
         }
     };
     

@@ -1,10 +1,8 @@
 #include <chrono>
 #include <cmath>
 #include <ctime>
-//#include <format>
 #include <fstream>
 #include <mpi.h>
-//#include <print>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -147,9 +145,9 @@ namespace PWFC
         syncTime += std::chrono::duration<float>(syncT1 - syncT0).count();
 
         if (extRank != MPI_PROC_NULL)
-            PWFC_LOG_INFO("[NODE_{}] {} external chunk ({},{}) {} node {}", rank, out ? "Sent back" : "Received", extDX + 1, extDY + 1, out ? "to" : "from", extRank);
+            PWFC_LOG_INFO("[NODE_%d] %s external chunk (%d,%d) %s node %d", rank, out ? "Sent back" : "Received", extDX + 1, extDY + 1, out ? "to" : "from", extRank);
         if (intRank != MPI_PROC_NULL)
-            PWFC_LOG_INFO("[NODE_{}] {} internal chunk ({},{}) {} node {}", rank, out ? "Received back" : "Sent", intDX + 1, intDY + 1, out ? "from" : "to", intRank);
+            PWFC_LOG_INFO("[NODE_%d] %s internal chunk (%d,%d) %s node %d", rank, out ? "Received back" : "Sent", intDX + 1, intDY + 1, out ? "from" : "to", intRank);
 
         PWFC::QChunk* sharedChunk = out ? &intChunk : &extChunk;
         return extRank == MPI_PROC_NULL ? nullptr : sharedChunk;
@@ -166,8 +164,8 @@ namespace PWFC
         std::vector<PWFC::QChunk> sharedChunksData(9, chunkLength); // The 3x3 buffer of chunks to load from neighbor nodes
         std::array<PWFC::QChunk*, 9> localChunksRef = { }; // The 3x3 array of chunk references to send to PWFC
 
-        PWFC_LOG_INFO("[NODE_{}] Starting WFC with chunks of dimension {}x{}", rank, chunkLength, chunkLength);
-        PWFC_LOG_INFO("[NODE_{}] Computation will produce a map {}\% bigger", rank, (float)(chunkLength * dim * 3 - length) / length * 100);
+        PWFC_LOG_INFO("[NODE_%d] Starting WFC with chunks of dimension %dx%d", rank, chunkLength, chunkLength);
+        PWFC_LOG_INFO("[NODE_%d] Computation will produce a map %f%% bigger", rank, (float)(chunkLength * dim * 3 - length) / length * 100);
 
         for(int round = 0; round < 9; round++)
         {
@@ -206,7 +204,7 @@ namespace PWFC
             }
         }
 
-        PWFC_LOG_INFO("[NODE_{}] Successfully computed the 3x3 local chunks!", rank);
+        PWFC_LOG_INFO("[NODE_%d] Successfully computed the 3x3 local chunks!", rank);
 
         // Final global buffer
         if (rank == 0) 
@@ -241,7 +239,7 @@ namespace PWFC
         // Rank 0 now possesses the entire map and can process/print it
         if (rank == 0) 
         {
-            PWFC_LOG_INFO("Successfully generated and gathered {} chunks from {} nodes.", 9 * size, size);
+            PWFC_LOG_INFO("Successfully generated and gathered %d chunks from %d nodes.", 9 * size, size);
             std::vector<PWFC::QChunk*> buf;
             for (int y = 0; y < 3 * dim; y++) 
             {
@@ -266,8 +264,8 @@ namespace PWFC
         auto execT1 = std::chrono::high_resolution_clock::now();
         execTime = std::chrono::duration<float>(execT1 - execT0).count();
 
-        PWFC_LOG_INFO("[NODE_{}] Total Execution time: {:.3f}s", rank, execTime);
-        PWFC_LOG_INFO("[NODE_{}] Total Sync time: {:.3f}s", rank, syncTime);
+        PWFC_LOG_INFO("[NODE_%d] Total Execution time: %.3fs", rank, execTime);
+        PWFC_LOG_INFO("[NODE_%d] Total Sync time: %.3fs", rank, syncTime);
 
         return 0;
     }
@@ -282,12 +280,12 @@ namespace PWFC
         int chunksPerSide = 3 * dim;
         int width  = length * PATTERN_SIZE;
         int height = length * PATTERN_SIZE;
-        PWFC_ASSERT(chunksPerSide * chunkLen >= length, "Invalid chunk size, too small! [real={}, asked={}]", chunksPerSide * chunkLen, length);
+        PWFC_ASSERT(chunksPerSide * chunkLen >= length, "Invalid chunk size, too small! [real=%d, asked=%d]", chunksPerSide * chunkLen, length);
 
         std::ofstream out(filepath);
         if (!out.is_open()) 
         {
-            PWFC_LOG_ERROR("Failed to open {} for writing!", filepath);
+            PWFC_LOG_ERROR("Failed to open %s for writing!", filepath.c_str());
             return;
         }
 
@@ -344,7 +342,7 @@ namespace PWFC
         }
 
         out.close();
-        PWFC_LOG_INFO("Successfully saved map to {}", filepath);
+        PWFC_LOG_INFO("Successfully saved map to %s", filepath.c_str());
     }
 
 }
