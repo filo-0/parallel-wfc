@@ -1,11 +1,14 @@
 
 #include <cassert>
 #include <random>
+#include <set>
 #include <vector>
 #include <iostream>
 
+#include "consts.hpp"
 #include "pwfc.hpp"
 #include "debug.hpp"
+#include "types.hpp"
 
 namespace PWFC 
 {
@@ -44,10 +47,33 @@ namespace PWFC
         return aOpen == bOpen;
     }
 
-    
-    static ErrCode iPropagate(std::array<QChunk*, 9> &chunks, int centerX, int centerY)
+    struct iQPatternID
     {
-        struct iWave { int Chunk, FromX, FromY, Dir; };
+        int ID;
+        QPattern Pattern;
+        
+        inline iQPatternID(int id, QPattern pattern) : ID(id), Pattern(pattern) { } 
+        inline bool operator<(const iQPatternID &other) const
+        { 
+
+            int thisEntropy  = Pattern.Entropy();
+            int otherEntropy = other.Pattern.Entropy(); 
+            if(thisEntropy == otherEntropy)
+                return ID < other.ID;
+            return thisEntropy < otherEntropy;
+        }
+    };
+    
+
+
+    static ErrCode iPropagate(std::set<iQPatternID> &uncollapsed, std::array<QChunk*, 9> &chunks, int centerX, int centerY)
+    {
+        struct iWave 
+        { 
+            int Chunk, FromX, FromY, Dir; 
+            inline iWave(int c, int x, int y, int d) :
+                Chunk(c), FromX(x), FromY(y), Dir(d) { }
+        };
         std::vector<iWave> stack = 
         {
             {4, centerX, centerY, 0 },
@@ -83,6 +109,9 @@ namespace PWFC
 
             const QPattern &from = fromChunk.Get(wave.FromX, wave.FromY);
                   QPattern &to   = toChunk  .Get(toX, toY);
+            
+            // Current pattern in the uncollapsed set
+            iQPatternID p = { toX + toY * chunkLen, to };
 
             bool changed = false;
             for (auto i = to.begin(); i != to.end(); ++i)
@@ -99,22 +128,32 @@ namespace PWFC
 
                 if (!match)
                 {
+                    if(!changed && toChunkId == 4) // erase only first time
+                        uncollapsed.erase(p);
+
                     to.Clear(i.Idx);
                     changed = true;
                 }
             }
             if (!changed)
                 continue;
-
-            if(to.Entropy() == 0)
+            
+            int updatedEntropy = to.Entropy();
+            if(updatedEntropy == 0)
             {
                 PWFC_LOG_ERROR("Cell was collapsed to zero entropy!");
                 return ERR_ZERO_ENTROPY;
             }
+            else if(updatedEntropy != 1 && toChunkId == 4)
+            {
+                p.Pattern = to;
+                uncollapsed.emplace(p);
+            }
+            // else it has collapsed
 
             for (int d = 0; d < 4; d++)
                 if (d != iOpposite(wave.Dir))
-                    stack.push_back({ toChunkId, toX, toY, d });
+                    stack.emplace_back(toChunkId, toX, toY, d);
         }
 
         return ERR_OK;
@@ -124,40 +163,34 @@ namespace PWFC
     {
         if(chunks[4] == nullptr || chunks[4]->Length() < MIN_CHUNK_LENGTH)
             return ERR_INVALID_INPUT;
-
+        
         auto &pivot = *chunks[4];
         std::vector<int> indices;
         std::mt19937 rand(seed);
         int chunkLen = pivot.Length();
-        int chunkSize = chunkLen * chunkLen;
 
-        while(true)
+        std::set<iQPatternID> uncollapsed;
+        for(int i = 0; i < pivot.Size(); i++)
         {
-            int minEntropy = MAX_ENTROPY;
-            indices.clear();
-            for(int idx = 0; idx < chunkSize; idx++)
-            {
-                QPattern &q = pivot.Get(idx);
-                if(q.IsCollapsed())
-                    continue;
-                if(q.Entropy() == minEntropy)
-                {
-                    indices.push_back(idx);
-                }
-                else if(q.Entropy() < minEntropy)
-                {
-                    indices.clear();
-                    minEntropy = q.Entropy();
-                    indices.push_back(idx);
-                }
-            }
-            if(indices.empty())
-                break;
+            QPattern &p = pivot.Get(i);
+            if(p.Entropy() > 1)
+                uncollapsed.emplace(i, p);
+            else if(p.Entropy() == 0)
+                return ERR_ZERO_ENTROPY;
+        }
+
+        while(!uncollapsed.empty())
+        {
+            iQPatternID p = *uncollapsed.begin();
+            uncollapsed.erase(uncollapsed.begin());
+            int idx = p.ID;
             
-            int idx = indices[rand() % indices.size()];
+            PWFC_ASSERT(pivot.Get(idx).Entropy() != 1, "Cell already collapsed!");
+            PWFC_ASSERT(pivot.Get(idx).Entropy() != 0, "Found unhaldled zero entropy cell!");
+
             pivot.Get(idx).Collapse(rand);
 
-            ErrCode err = iPropagate(chunks, iX(idx, chunkLen), iY(idx, chunkLen));
+            ErrCode err = iPropagate(uncollapsed, chunks, iX(idx, chunkLen), iY(idx, chunkLen));
             if(err)
                 return err;
         }
@@ -169,7 +202,7 @@ namespace PWFC
     void PrintQChunk(QChunk& chunk, std::ostream &stream) 
     {
         int chunkLen = chunk.Length();
-        std::vector<std::vector<char>> buffer(chunkLen * PATTERN_SIZE, std::vector<char>(chunkLen * PATTERN_SIZE));
+        std::vector<std::vector<char>> buffer(chunkLen * PATTERN_LENGTH, std::vector<char>(chunkLen * PATTERN_LENGTH));
 
         for (int y = 0; y < chunkLen; y++) 
         {
@@ -181,14 +214,14 @@ namespace PWFC
                 bool collapsed = q.IsCollapsed();
                 // Fetch the collapsed state
                 Pattern state = q.State();
-                for (int i = 0; i < PATTERN_SIZE; i++)
-                    for (int j = 0; j < PATTERN_SIZE; j++)
-                        buffer[y * PATTERN_SIZE + i][x * PATTERN_SIZE + j] = collapsed ? (state.Get(j, i) ? ' ' : '#') : '?';
+                for (int i = 0; i < PATTERN_LENGTH; i++)
+                    for (int j = 0; j < PATTERN_LENGTH; j++)
+                        buffer[y * PATTERN_LENGTH + i][x * PATTERN_LENGTH + j] = collapsed ? (state.Get(j, i) ? ' ' : '#') : '?';
             }
         }
-        for (int y = 0; y < chunkLen * PATTERN_SIZE; y++) 
+        for (int y = 0; y < chunkLen * PATTERN_LENGTH; y++) 
         {
-            for (int x = 0; x < chunkLen * PATTERN_SIZE; x++) 
+            for (int x = 0; x < chunkLen * PATTERN_LENGTH; x++) 
                 stream << ' ' << buffer[y][x];
             stream << "\n";
         }

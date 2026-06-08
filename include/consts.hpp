@@ -4,11 +4,11 @@ namespace PWFC
 {
     /** This value determines the smaller edge length of a chunk. */
     constexpr int MIN_CHUNK_LENGTH = 16;
-    constexpr int PATTERN_SIZE = 3;
+    constexpr int PATTERN_LENGTH = 3;
     constexpr int PATTERN_COUNT = 16;
     constexpr int MAX_ENTROPY = PATTERN_COUNT;
 
-    constexpr bool TILE_PATTERNS[][PATTERN_SIZE][PATTERN_SIZE]
+    constexpr bool TILE_PATTERNS[][PATTERN_LENGTH][PATTERN_LENGTH]
     {
         {
             { 0, 0, 0},
@@ -96,9 +96,9 @@ namespace PWFC
     constexpr int PARSE_PATTERN(int i)
     {
         int val = 0;
-        for (int j = 0; j < PATTERN_SIZE; j++) 
-            for (int k = 0; k < PATTERN_SIZE; k++) 
-                val |= TILE_PATTERNS[i][j][k] << (j * PATTERN_SIZE + k);
+        for (int j = 0; j < PATTERN_LENGTH; j++) 
+            for (int k = 0; k < PATTERN_LENGTH; k++) 
+                val |= TILE_PATTERNS[i][j][k] << (j * PATTERN_LENGTH + k);
         
         return val;
     }

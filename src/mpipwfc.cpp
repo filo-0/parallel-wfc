@@ -275,11 +275,10 @@ namespace PWFC
         if(result.empty())
             return;
 
-
         int chunkLen = result[0].Length();
         int chunksPerSide = 3 * dim;
-        int width  = length * PATTERN_SIZE;
-        int height = length * PATTERN_SIZE;
+        int width  = length * PATTERN_LENGTH;
+        int height = length * PATTERN_LENGTH;
         PWFC_ASSERT(chunksPerSide * chunkLen >= length, "Invalid chunk size, too small! [real=%d, asked=%d]", chunksPerSide * chunkLen, length);
 
         std::ofstream out(filepath);
@@ -296,19 +295,18 @@ namespace PWFC
             for (int px = 0; px < width; ++px) 
             {
                 // Global chunk coordinates
-                int cx = px / (chunkLen * PATTERN_SIZE);
-                int cy = py / (chunkLen * PATTERN_SIZE);
+                int cx = px / (chunkLen * PATTERN_LENGTH);
+                int cy = py / (chunkLen * PATTERN_LENGTH);
                 
                 // Pattern coordinates inside the current chunk
-                int p_x = (px / PATTERN_SIZE) % chunkLen;
-                int p_y = (py / PATTERN_SIZE) % chunkLen;
+                int p_x = (px / PATTERN_LENGTH) % chunkLen;
+                int p_y = (py / PATTERN_LENGTH) % chunkLen;
                 
                 // Pixel coordinates inside the pattern
-                int px_in = px % PATTERN_SIZE;
-                int py_in = py % PATTERN_SIZE;
+                int px_in = px % PATTERN_LENGTH;
+                int py_in = py % PATTERN_LENGTH;
                 
                 // Calculate which Rank / Node this chunk came from
-                // (Mirroring the collection logic in mpipwfc.cpp)
                 int i = cy % 3;
                 int j = cx % 3;
                 int rankX = cx / 3;
@@ -320,8 +318,7 @@ namespace PWFC
                 // Extract the pixel state
                 const PWFC::QChunk& chunk = result[chunk_index];
                 
-                // Assuming chunk.Get() accepts a linear index y * CHUNK_LEN + x
-                const PWFC::QPattern& q = chunk.Get(p_y * chunkLen + p_x);
+                const PWFC::QPattern& q = chunk.Get(p_x, p_y);
                 
                 if (!q.IsCollapsed()) 
                 {
@@ -338,7 +335,7 @@ namespace PWFC
                         out << "255 255 255 "; // White pixel
                 }
             }
-            out << "\n"; // Newline after every row of pixels
+            out << "\n";
         }
 
         out.close();

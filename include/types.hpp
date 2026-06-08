@@ -1,7 +1,6 @@
 #pragma once
 
 #include <array>
-#include <bit>
 #include <bitset>
 #include <random>
 
@@ -15,7 +14,7 @@ namespace PWFC
         inline constexpr Pattern() : _Raw{0} { }
         inline constexpr Pattern(PatternMask mask) : _Raw{(int)mask} { }
         inline constexpr operator int() const { return _Raw; }
-        inline constexpr bool Get(int x, int y) { return _Raw & (1 << (y * PATTERN_SIZE + x)); }
+        inline constexpr bool Get(int x, int y) { return _Raw & (1 << (y * PATTERN_LENGTH + x)); }
     private:
         int _Raw;
     };
@@ -69,10 +68,15 @@ namespace PWFC
     
         inline static int _FindFirst(std::bitset<MAX_ENTROPY> bitset, int i = -1)
         {
+#ifdef __GNUC__ 
+            int b = bitset.to_ulong() >> (i + 1);
+            return b == 0 ? 16 : __builtin_ctz(b) + i + 1;
+#else 
             for(int j = i + 1; j < (int)bitset.size(); j++)
                 if(bitset[j])
                     return j;
             return bitset.size();
+#endif 
         }
     };
     
