@@ -1,0 +1,31 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\geometry{margin=1in}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{hyperref}
+
+\title{\textbf{Parallel Computing Project Report:} \textit{Wave Function Collapse}}
+\author{Filippo Battisti, Simone Freschet, Francesco Bittasi}
+\date{Academic Year 2025/2026}
+
+\usepackage[backend=bibtex, style=numeric]{biblatex}
+\addbibresource{refs.bib} % Replace with your .bib file name
+
+\begin{document}
+
+\maketitle
+
+\input{sections/introduction.tex}
+\input{sections/sequential.tex}
+\input{sections/parallel.tex}
+\input{sections/topology.tex}
+\input{sections/mpi.tex}
+\input{sections/setup.tex}
+\input{sections/results.tex}
+\input{sections/discussion.tex}
+\input{sections/conclusion.tex}
+
+\printbibliography
+\end{document}
