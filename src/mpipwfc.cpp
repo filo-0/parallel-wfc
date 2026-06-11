@@ -1,4 +1,3 @@
-#include <chrono>
 #include <cmath>
 #include <ctime>
 #include <fstream>
@@ -108,7 +107,7 @@ namespace PWFC
             return MPI_PROC_NULL;
         return y * dim + x;
     }
-    static PWFC::QChunk *iShareChunks(float &syncTime, int dim, int rank, int chunkIdx, int pivotX, int pivotY, int offsetX, int offsetY, 
+    static PWFC::QChunk *iShareChunks(double &syncTime, int dim, int rank, int chunkIdx, int pivotX, int pivotY, int offsetX, int offsetY, 
             std::vector<PWFC::QChunk> &intChunks, std::vector<PWFC::QChunk> &extChunks, bool out)
     {
         // The coordinate ot the current node
@@ -136,13 +135,13 @@ namespace PWFC
         int chunkDataSize = intChunk.Size() * sizeof(PWFC::QPattern);
 
         MPI_Status status;
-        auto syncT0 = std::chrono::high_resolution_clock::now();
+        double syncT0 = MPI_Wtime();
         MPI_Sendrecv(
                 out ? extChunk.Data() : intChunk.Data(), chunkDataSize, MPI_BYTE, out ? extRank : intRank, 0,
                 out ? intChunk.Data() : extChunk.Data(), chunkDataSize, MPI_BYTE, out ? intRank : extRank, 0,
                 MPI_COMM_WORLD, &status);
-        auto syncT1 = std::chrono::high_resolution_clock::now();
-        syncTime += std::chrono::duration<float>(syncT1 - syncT0).count();
+        double syncT1 = MPI_Wtime();
+        syncTime += (syncT1 - syncT0);
 
         if (extRank != MPI_PROC_NULL)
             PWFC_LOG_INFO("[NODE_%d] %s external chunk (%d,%d) %s node %d", rank, out ? "Sent back" : "Received", extDX + 1, extDY + 1, out ? "to" : "from", extRank);
@@ -154,9 +153,9 @@ namespace PWFC
     }
     int RunMPI(std::vector<QChunk> &result, int rank, int dim, int size, int length, unsigned int seed)
     {
-        float execTime = 0;
-        float syncTime = 0;
-        auto execT0 = std::chrono::high_resolution_clock::now();
+        double execTime = 0;
+        double syncTime = 0;
+        double execT0 = MPI_Wtime();
 
         int chunkLength = std::max(iCeilDiv(length, dim * 3), MIN_CHUNK_LENGTH);
         int chunkSize = chunkLength * chunkLength;
@@ -215,12 +214,15 @@ namespace PWFC
         std::vector<QPattern> localBuffer(chunkSize * size); 
         for(int i = 0; i < 9; i++)
         {
+            double gatherT0 = MPI_Wtime();
             MPI_Gather(
                 localChunksData[i].Data(), sendingBytes, MPI_BYTE, // Send buffer
                 localBuffer.data(), sendingBytes, MPI_BYTE,     // Receive buffer (only relevant on root)
                 0,                                              // Root node receiving the data
                 MPI_COMM_WORLD                                  // Communicator
             );
+            double gatherT1 = MPI_Wtime();
+            syncTime += (gatherT1 - gatherT0);
 
             // copy to the result buffer 
             if(rank == 0)
@@ -261,8 +263,8 @@ namespace PWFC
                 PWFC_LOG_INFO("There was no error in the final check :)");
         }
         
-        auto execT1 = std::chrono::high_resolution_clock::now();
-        execTime = std::chrono::duration<float>(execT1 - execT0).count();
+        double execT1 = MPI_Wtime();
+        execTime = (execT1 - execT0);
 
         PWFC_LOG_INFO("[NODE_%d] Total Execution time: %.3fs", rank, execTime);
         PWFC_LOG_INFO("[NODE_%d] Total Sync time: %.3fs", rank, syncTime);

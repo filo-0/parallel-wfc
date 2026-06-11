@@ -26,7 +26,15 @@ int main(int argc, char **argv)
         nullptr, nullptr, nullptr
     };
 
+    struct timespec T0, T1;
+    clock_gettime( CLOCK_REALTIME, &T0);
+
     PWFC::Generate(chunksref, seed);
+    
+    clock_gettime( CLOCK_REALTIME, &T1);
+    double elapsed = (double)(T1.tv_sec - T0.tv_sec) + (double)(T1.tv_nsec - T0.tv_nsec) / 1e9;
+    PWFC_LOG_INFO("Total Execution time: %.3fs", elapsed);
+
     PWFC::SaveToImage(chunk, outpath);
 }
 void iParseArgs(std::string &outpath, unsigned int &seed, int &length, char **argv, int argc)
