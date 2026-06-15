@@ -28,6 +28,9 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     endif()
 endif()
 
+set(STB_IMAGE_SHARED ON)
+add_subdirectory("vendor/stb-image")
+
 # Find the MPI package (specifically looking for the CXX components)
 find_package(MPI REQUIRED COMPONENTS CXX)
 include_directories("include")
@@ -37,4 +40,5 @@ add_executable(swfc "src/generation.cpp" "src/swfc.cpp")
 
 # Link the MPI::MPI_CXX target to your executable
 # This automatically handles include directories and compiler flags
-target_link_libraries(mpipwfc PRIVATE MPI::MPI_CXX)
+target_link_libraries(mpipwfc PRIVATE MPI::MPI_CXX stb-image)
+target_link_libraries(swfc PRIVATE stb-image)

@@ -8,13 +8,16 @@
 #include "debug.hpp"
 
 #include <array>
+#include <chrono>
 #include <ctime>
 #include <fstream>
+#include <vector>
+#include "stb_image_write.h"
 
 void iParseArgs(std::string &outpath, unsigned int &seed, int &length, char **argv, int argc);
 int main(int argc, char **argv)
 {
-    std::string outpath = "out.ppm";
+    std::string outpath = "";
     unsigned int seed = time(nullptr);
     int length = 16;
     iParseArgs(outpath, seed, length, argv, argc);
@@ -22,11 +25,15 @@ int main(int argc, char **argv)
     PWFC::QChunk chunk( length);
     std::array<PWFC::QChunk*, 9> chunksref = {
         nullptr, nullptr, nullptr,
-        nullptr, &chunk, nullptr,
+        nullptr, &chunk , nullptr,
         nullptr, nullptr, nullptr
     };
-
+    
+    auto t0 = std::chrono::high_resolution_clock::now();
     PWFC::Generate(chunksref, seed);
+    auto t1 = std::chrono::high_resolution_clock::now();
+    PWFC_LOG_INFO("Execution time: %f", std::chrono::duration<float>(t1 - t0).count());
+
     PWFC::SaveToImage(chunk, outpath);
 }
 void iParseArgs(std::string &outpath, unsigned int &seed, int &length, char **argv, int argc)
@@ -62,19 +69,16 @@ namespace PWFC
 {
     void SaveToImage(const QChunk &chunk, const std::string &filepath)
     {
+        if(filepath == "")
+            return;
+
         int length = chunk.Length();
         int width  = length * PATTERN_LENGTH;
         int height = length * PATTERN_LENGTH;
 
-        std::ofstream out(filepath);
-        if (!out.is_open()) 
-        {
-            PWFC_LOG_ERROR("Failed to open %s for writing!", filepath.c_str());
-            return;
-        }
-
-        out << "P3\n" << width << " " << height << "\n255\n";
-
+        std::vector<unsigned char> pixels(width * height * 3);
+        
+        int i = 0;
         for (int py = 0; py < height; ++py) 
         {
             for (int px = 0; px < width; ++px) 
@@ -89,22 +93,36 @@ namespace PWFC
                 if (!q.IsCollapsed()) 
                 {
                     // Fallback color for uncollapsed/error cells (Red)
-                    out << "255 0 0 "; 
+                    pixels[i + 0] = 255;
+                    pixels[i + 1] = 0;
+                    pixels[i + 2] = 0;
                 } 
                 else 
                 {
                     // From your PrintQChunk: state.Get() returns true for ' ' and false for '#'
                     bool isBlack = q.State().Get(px_in, py_in); 
                     if (isBlack) 
-                        out << "0 0 0 ";       // Black pixel
+                    {
+                        pixels[i + 0] = 0;
+                        pixels[i + 1] = 0;
+                        pixels[i + 2] = 0;
+                    } // Black pixel
                     else 
-                        out << "255 255 255 "; // White pixel
+                    {
+                        pixels[i + 0] = 255;
+                        pixels[i + 1] = 255;
+                        pixels[i + 2] = 255;
+                    }
                 }
+                i += 3;
             }
-            out << "\n"; // Newline after every row of pixels
         }
 
-        out.close();
-        PWFC_LOG_INFO("Successfully saved map to %s", filepath.c_str());
+        int success = stbi_write_png(filepath.c_str(), width, height, 3, pixels.data(), width * 3);
+        
+        if(success)
+            PWFC_LOG_INFO("Successfully saved map to %s", filepath.c_str());
+        else 
+            PWFC_LOG_ERROR("Could not write PNG file to %s", filepath.c_str());
     }
 }

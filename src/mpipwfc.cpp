@@ -1,11 +1,11 @@
 #include <chrono>
 #include <cmath>
 #include <ctime>
-#include <fstream>
 #include <mpi.h>
 #include <string>
 #include <string_view>
 #include <vector>
+#include "stb_image_write.h"
 
 #include "debug.hpp"
 #include "pwfc.hpp"
@@ -18,7 +18,7 @@ int main(int argc, char** argv)
     
     int length = 128;
     unsigned int seed = time(nullptr);
-    std::string outpath = "out.ppm";
+    std::string outpath = "";
     iParseArgs(outpath, seed, length, argv, argc);
 
     int error = PWFC::InitMPI(rank, dim, size, argc, argv);
@@ -272,23 +272,18 @@ namespace PWFC
 
     void SaveToImage(const std::vector<PWFC::QChunk>& result, int dim, int length, const std::string& filepath) 
     {
-        if(result.empty())
+        if(result.empty() || filepath == "")
             return;
-
+        
+        PWFC_LOG_INFO("Building final PNG image");
+        
         int chunkLen = result[0].Length();
         int chunksPerSide = 3 * dim;
         int width  = length * PATTERN_LENGTH;
         int height = length * PATTERN_LENGTH;
         PWFC_ASSERT(chunksPerSide * chunkLen >= length, "Invalid chunk size, too small! [real=%d, asked=%d]", chunksPerSide * chunkLen, length);
 
-        std::ofstream out(filepath);
-        if (!out.is_open()) 
-        {
-            PWFC_LOG_ERROR("Failed to open %s for writing!", filepath.c_str());
-            return;
-        }
-
-        out << "P3\n" << width << " " << height << "\n255\n";
+        std::vector<unsigned char> pixels(width * height * 3);
 
         for (int py = 0; py < height; ++py) 
         {
@@ -297,49 +292,57 @@ namespace PWFC
                 // Global chunk coordinates
                 int cx = px / (chunkLen * PATTERN_LENGTH);
                 int cy = py / (chunkLen * PATTERN_LENGTH);
-                
+
                 // Pattern coordinates inside the current chunk
                 int p_x = (px / PATTERN_LENGTH) % chunkLen;
                 int p_y = (py / PATTERN_LENGTH) % chunkLen;
-                
+
                 // Pixel coordinates inside the pattern
                 int px_in = px % PATTERN_LENGTH;
                 int py_in = py % PATTERN_LENGTH;
-                
+
                 // Calculate which Rank / Node this chunk came from
                 int i = cy % 3;
                 int j = cx % 3;
                 int rankX = cx / 3;
                 int rankY = cy / 3;
-                
+
                 // Index in the flattened MPI result vector
                 int chunk_index = i * 3 + j + rankX * 9 + 9 * dim * rankY;
-                
+
                 // Extract the pixel state
                 const PWFC::QChunk& chunk = result[chunk_index];
-                
                 const PWFC::QPattern& q = chunk.Get(p_x, p_y);
-                
+
+                // Calculate the start index for this pixel in the 1D array
+                int pixel_idx = (py * width + px) * 3;
+
                 if (!q.IsCollapsed()) 
                 {
-                    // Fallback color for uncollapsed/error cells (Red)
-                    out << "255 0 0 "; 
+                    // Fallback Red
+                    pixels[pixel_idx + 0] = 255; // R
+                    pixels[pixel_idx + 1] = 0;   // G
+                    pixels[pixel_idx + 2] = 0;   // B
                 } 
                 else 
                 {
-                    // From your PrintQChunk: state.Get() returns true for ' ' and false for '#'
                     bool isBlack = q.State().Get(px_in, py_in); 
-                    if (isBlack) 
-                        out << "0 0 0 ";       // Black pixel
-                    else 
-                        out << "255 255 255 "; // White pixel
+                    unsigned char color = isBlack ? 0 : 255;
+
+                    // Set RGB channels to either all 0 (black) or all 255 (white)
+                    pixels[pixel_idx + 0] = color;
+                    pixels[pixel_idx + 1] = color;
+                    pixels[pixel_idx + 2] = color;
                 }
             }
-            out << "\n";
         }
 
-        out.close();
-        PWFC_LOG_INFO("Successfully saved map to %s", filepath.c_str());
-    }
+        // Write image 
+        int success = stbi_write_png(filepath.c_str(), width, height, 3, pixels.data(), width * 3);
 
+        if (success) 
+            PWFC_LOG_INFO("Successfully saved PNG map to %s", filepath.c_str());
+        else 
+            PWFC_LOG_ERROR("Failed to write PNG to %s!", filepath.c_str());
+    }
 }
