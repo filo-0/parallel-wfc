@@ -3,14 +3,14 @@
  */
 
 #include "swfc.hpp"
-#include "consts.hpp"
 #include "types.hpp"
 #include "debug.hpp"
+
+#include "maze-rules.hpp"
 
 #include <array>
 #include <chrono>
 #include <ctime>
-#include <fstream>
 #include <vector>
 #include "stb_image_write.h"
 
@@ -22,15 +22,31 @@ int main(int argc, char **argv)
     int length = 16;
     iParseArgs(outpath, seed, length, argv, argc);
 
-    PWFC::QChunk chunk( length);
+    PWFC::QChunk chunk( length, MazeRule::MAX_ENTROPY);
     std::array<PWFC::QChunk*, 9> chunksref = {
         nullptr, nullptr, nullptr,
         nullptr, &chunk , nullptr,
         nullptr, nullptr, nullptr
     };
     
+    std::vector<float> weights(   MazeRule::MAX_ENTROPY, 1);
+    std::vector<PWFC::Rule> rules;
+    for(int i = 0; i < MazeRule::MAX_ENTROPY; i++)
+    {
+        for (int j = 0; j < MazeRule::MAX_ENTROPY; j++) 
+        {
+            for(int d = 0; d < 4; d++)
+            {
+                if(CanConnect(MazeRule::PATTERNS[i], MazeRule::PATTERNS[j], d))
+                {
+                    rules.emplace_back(i, j, d);
+                }
+            }
+        }
+    }
+    PWFC::RuleSet ruleset(rules, weights, MazeRule::MAX_ENTROPY, seed);
     auto t0 = std::chrono::high_resolution_clock::now();
-    PWFC::Generate(chunksref, seed);
+    PWFC::Generate(chunksref, ruleset);
     auto t1 = std::chrono::high_resolution_clock::now();
     PWFC_LOG_INFO("Execution time: %f", std::chrono::duration<float>(t1 - t0).count());
 
@@ -73,8 +89,8 @@ namespace PWFC
             return;
 
         int length = chunk.Length();
-        int width  = length * PATTERN_LENGTH;
-        int height = length * PATTERN_LENGTH;
+        int width  = length * MazeRule::PATTERN_LENGTH;
+        int height = length * MazeRule::PATTERN_LENGTH;
 
         std::vector<unsigned char> pixels(width * height * 3);
         
@@ -83,10 +99,10 @@ namespace PWFC
         {
             for (int px = 0; px < width; ++px) 
             {
-                int px_out = px / PATTERN_LENGTH;
-                int py_out = py / PATTERN_LENGTH;
-                int px_in  = px % PATTERN_LENGTH;
-                int py_in  = py % PATTERN_LENGTH;
+                int px_out = px / MazeRule::PATTERN_LENGTH;
+                int py_out = py / MazeRule::PATTERN_LENGTH;
+                int px_in  = px % MazeRule::PATTERN_LENGTH;
+                int py_in  = py % MazeRule::PATTERN_LENGTH;
 
                 const PWFC::QPattern& q = chunk.Get(px_out, py_out);
                 
@@ -100,7 +116,7 @@ namespace PWFC
                 else 
                 {
                     // From your PrintQChunk: state.Get() returns true for ' ' and false for '#'
-                    bool isBlack = q.State().Get(px_in, py_in); 
+                    bool isBlack = MazeRule::PATTERNS[q.State()].Get(px_in, py_in); 
                     if (isBlack) 
                     {
                         pixels[i + 0] = 0;

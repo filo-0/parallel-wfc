@@ -2,31 +2,40 @@
 #include <cassert>
 #include <random>
 #include <set>
+#include <functional>
 #include <vector>
-#include <iostream>
 
-#include "consts.hpp"
 #include "pwfc.hpp"
 #include "debug.hpp"
 #include "types.hpp"
 
 namespace PWFC 
 {
-    void QPattern::Collapse(std::mt19937 &rand)
+    void QPattern::Collapse(std::mt19937 &rand, const std::vector<float> weights)
     {
-        int pick = rand() % Entropy();
+        float maxWeight = 0.f;
+        for(Iterator p = begin(); p != end(); ++p)
+            maxWeight += weights[p.Idx];
+        
+        float pick = (float)rand() / rand.max() * maxWeight;
+        
         Iterator p = begin();
-        for (int i = 0; i < pick; i++)
+        float    i = weights[p.Idx];
+        while (i < pick)
+        {
             ++p;
+            PWFC_ASSERT(p != end(), "Out of bound collapse!");
+            i += weights[p.Idx];
+        }
 
         int state = p.Idx;
-        _State.reset();
-        _State.set(state);
+        _State.Clear();
+        _State.Set(state);
     }
     void QPattern::Collapse(int state)
     {
-        _State.reset();
-        _State.set(state);
+        _State.Clear();
+        _State.Set(state);
     }
     static inline int iOpposite(int dir) { return (dir + 2) % 4; }
     //static inline int iIdx(int x, int y, int chunkLen) { return y * chunkLen + x; }
@@ -36,16 +45,6 @@ namespace PWFC
 
     static inline int iNextX(int x, int dir) { return x + (2 - dir) % 2; }
     static inline int iNextY(int y, int dir) { return y + (1 - dir) % 2; }
-    
-    static inline bool iCanConnect(Pattern a, Pattern b, int a2b)
-    {
-        int b2a = iOpposite(a2b);
-
-        bool aOpen = a.Get(iNextX(1, a2b), iNextY(1, a2b));
-        bool bOpen = b.Get(iNextX(1, b2a), iNextY(1, b2a));
-
-        return aOpen == bOpen;
-    }
 
     struct iQPatternID
     {
@@ -55,7 +54,6 @@ namespace PWFC
         inline iQPatternID(int id, QPattern pattern) : ID(id), Pattern(pattern) { } 
         inline bool operator<(const iQPatternID &other) const
         { 
-
             int thisEntropy  = Pattern.Entropy();
             int otherEntropy = other.Pattern.Entropy(); 
             if(thisEntropy == otherEntropy)
@@ -63,10 +61,8 @@ namespace PWFC
             return thisEntropy < otherEntropy;
         }
     };
-    
 
-
-    static ErrCode iPropagate(std::set<iQPatternID> &uncollapsed, std::array<QChunk*, 9> &chunks, int centerX, int centerY)
+    static ErrCode iPropagate(std::set<iQPatternID> &uncollapsed, std::array<QChunk*, 9> &chunks, const RuleSet &ruleset, int centerX, int centerY)
     {
         struct iWave 
         { 
@@ -119,7 +115,7 @@ namespace PWFC
                 bool match = false;
                 for (auto j = from.begin(); j != from.end(); ++j)
                 {
-                    if (iCanConnect(from.State(j.Idx), to.State(i.Idx), wave.Dir))
+                    if (ruleset.Allows(j.Idx, i.Idx, wave.Dir))
                     {
                         match = true;
                         break;
@@ -159,16 +155,15 @@ namespace PWFC
         return ERR_OK;
     }
 
-    ErrCode Generate(std::array<QChunk*, 9>& chunks, unsigned int seed)
+    ErrCode Generate(std::array<QChunk*, 9>& chunks, const RuleSet &ruleset)
     {
         if(chunks[4] == nullptr || chunks[4]->Length() < MIN_CHUNK_LENGTH)
             return ERR_INVALID_INPUT;
         
         auto &pivot = *chunks[4];
-        std::vector<int> indices;
-        std::mt19937 rand(seed);
+        std::mt19937 rand(ruleset.Seed());
         int chunkLen = pivot.Length();
-
+        
         std::set<iQPatternID> uncollapsed;
         for(int i = 0; i < pivot.Size(); i++)
         {
@@ -188,9 +183,9 @@ namespace PWFC
             PWFC_ASSERT(pivot.Get(idx).Entropy() != 1, "Cell already collapsed!");
             PWFC_ASSERT(pivot.Get(idx).Entropy() != 0, "Found unhaldled zero entropy cell!");
 
-            pivot.Get(idx).Collapse(rand);
+            pivot.Get(idx).Collapse(rand, ruleset.Weights());
 
-            ErrCode err = iPropagate(uncollapsed, chunks, iX(idx, chunkLen), iY(idx, chunkLen));
+            ErrCode err = iPropagate(uncollapsed, chunks, ruleset, iX(idx, chunkLen), iY(idx, chunkLen));
             if(err)
                 return err;
         }
@@ -198,36 +193,7 @@ namespace PWFC
         return ERR_OK;
     }
 
-
-    void PrintQChunk(QChunk& chunk, std::ostream &stream) 
-    {
-        int chunkLen = chunk.Length();
-        std::vector<std::vector<char>> buffer(chunkLen * PATTERN_LENGTH, std::vector<char>(chunkLen * PATTERN_LENGTH));
-
-        for (int y = 0; y < chunkLen; y++) 
-        {
-            for (int x = 0; x < chunkLen; x++) 
-            {
-                // Assuming Get(x, y) or Get(y * CHUNK_LEN + x) is available
-                QPattern& q = chunk.Get(y * chunkLen + x);
-
-                bool collapsed = q.IsCollapsed();
-                // Fetch the collapsed state
-                Pattern state = q.State();
-                for (int i = 0; i < PATTERN_LENGTH; i++)
-                    for (int j = 0; j < PATTERN_LENGTH; j++)
-                        buffer[y * PATTERN_LENGTH + i][x * PATTERN_LENGTH + j] = collapsed ? (state.Get(j, i) ? ' ' : '#') : '?';
-            }
-        }
-        for (int y = 0; y < chunkLen * PATTERN_LENGTH; y++) 
-        {
-            for (int x = 0; x < chunkLen * PATTERN_LENGTH; x++) 
-                stream << ' ' << buffer[y][x];
-            stream << "\n";
-        }
-    }
-
-    bool iValidateBorders(const QChunk &a, const QChunk &b, int a2b)
+    bool iValidateBorders(const RuleSet &ruleset, const QChunk &a, const QChunk &b, int a2b)
     {
         PWFC_ASSERT(a.Length() == b.Length(), "Invalid chunk lengths!");
 
@@ -240,9 +206,9 @@ namespace PWFC
         
         for (int i = 0; i < chunkLen; i++) 
         {
-            Pattern stateA = a.Get(pax, pay).State();
-            Pattern stateB = b.Get(pbx, pby).State();
-            if(!iCanConnect(stateA, stateB, a2b))
+            int stateA = a.Get(pax, pay).State();
+            int stateB = b.Get(pbx, pby).State();
+            if(!ruleset.Allows(stateA, stateB, a2b))
                 return false;
 
             if(a2b % 2 == 0)
@@ -252,7 +218,7 @@ namespace PWFC
         }
         return true;
     }
-    bool Validate(const std::vector<QChunk*> &chunks, int len)
+    bool Validate(const std::vector<QChunk*> &chunks, const RuleSet &ruleset, int len)
     {
         if(len * len != (int)chunks.size())
         {
@@ -290,7 +256,7 @@ namespace PWFC
                     if(ox < 0 || oy < 0 || ox >= len || oy >= len)
                         continue;
                     const QChunk &other = *chunks[oy * len + ox];
-                    if(!iValidateBorders(cur, other, dir))
+                    if(!iValidateBorders(ruleset, cur, other, dir))
                     {
                         PWFC_LOG_ERROR("Chunk (%d,%d) cant connect with chunk (%d,%d)", x, y, ox, oy);
                         return false;

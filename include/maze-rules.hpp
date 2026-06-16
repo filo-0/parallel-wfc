@@ -1,9 +1,8 @@
-#pragma once
+#include <array>
 
-namespace PWFC 
+namespace MazeRule 
 {
     /** This value determines the smaller edge length of a chunk. */
-    constexpr int MIN_CHUNK_LENGTH = 16;
     constexpr int PATTERN_LENGTH = 3;
     constexpr int PATTERN_COUNT = 16;
     constexpr int MAX_ENTROPY = PATTERN_COUNT;
@@ -121,12 +120,46 @@ namespace PWFC
         PATTERN_BLIND_DOWN      = PARSE_PATTERN(14),
         PATTERN_BLIND_LEFT      = PARSE_PATTERN(15),
     };
-    enum ErrCode : int 
+    class Pattern 
     {
-        ERR_OK,
-        ERR_ZERO_ENTROPY,
-        ERR_OUT_OF_CHUNK,
-        ERR_INVALID_INPUT
+    public:
+        inline constexpr Pattern() : _Raw{0} { }
+        inline constexpr Pattern(PatternMask mask) : _Raw{(int)mask} { }
+        inline constexpr operator int() const { return _Raw; }
+        inline constexpr bool Get(int x, int y) const { return _Raw & (1 << (y * PATTERN_LENGTH + x)); }
+    private:
+        int _Raw;
     };
+    
+    constexpr static std::array<Pattern, MAX_ENTROPY> PATTERNS = 
+    {
+        PATTERN_FILLED,
+        PATTERN_CROSS,
+        PATTERN_FORK_UP,
+        PATTERN_FORK_RIGHT,
+        PATTERN_FORK_DOWN,
+        PATTERN_FORK_LEFT,
+        PATTERN_LINE_HORIZONTAL,
+        PATTERN_LINE_VERTICAL,
+        PATTERN_CURVE_UP,
+        PATTERN_CURVE_RIGHT,
+        PATTERN_CURVE_DOWN,
+        PATTERN_CURVE_LEFT,
+        PATTERN_BLIND_UP,
+        PATTERN_BLIND_RIGHT,
+        PATTERN_BLIND_DOWN,
+        PATTERN_BLIND_LEFT,
+    };
+    static inline int Opposite(int dir) { return (dir + 2) % 4; }
+    static inline int NextX(int x, int dir) { return x + (2 - dir) % 2; }
+    static inline int NextY(int y, int dir) { return y + (1 - dir) % 2; }
+    static inline bool CanConnect(Pattern a, Pattern b, int a2b)
+    {
+        int b2a = Opposite(a2b);
 
+        bool aOpen = a.Get(NextX(1, a2b), NextY(1, a2b));
+        bool bOpen = b.Get(NextX(1, b2a), NextY(1, b2a));
+
+        return aOpen == bOpen;
+    }
 }

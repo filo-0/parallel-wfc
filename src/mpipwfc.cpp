@@ -7,9 +7,12 @@
 #include <vector>
 #include "stb_image_write.h"
 
+#include "maze-rules.hpp"
+
 #include "debug.hpp"
 #include "pwfc.hpp"
 #include "mpiwfc.hpp"
+#include "types.hpp"
 
 void iParseArgs(std::string &outpath, unsigned int &seed, int &length, char **argv, int argc);
 int main(int argc, char** argv) 
@@ -26,8 +29,8 @@ int main(int argc, char** argv)
     {
         if (rank == 0) 
         {
-            //std::println("Error: This application must be run with a perfect sqared processes count.");
-            //std::println("Usage: mpirun -np <num_proc> <exec_path>");
+            printf("Error: This application must be run with a perfect sqared processes count.\n");
+            printf("Usage: mpirun -np <num_proc> <exec_path>\n");
         }
         MPI_Abort(MPI_COMM_WORLD, error);
     }
@@ -133,13 +136,13 @@ namespace PWFC
         // send
         PWFC::QChunk &extChunk = extChunks[iChunkIdx(extDY + 1, extDX + 1)];
         PWFC::QChunk &intChunk = intChunks[iChunkIdx(intDY + 1, intDX + 1)];
-        int chunkDataSize = intChunk.Size() * sizeof(PWFC::QPattern);
+        int chunkDataSize = intChunk.StateDataSize();
 
         MPI_Status status;
         auto syncT0 = std::chrono::high_resolution_clock::now();
         MPI_Sendrecv(
-                out ? extChunk.Data() : intChunk.Data(), chunkDataSize, MPI_BYTE, out ? extRank : intRank, 0,
-                out ? intChunk.Data() : extChunk.Data(), chunkDataSize, MPI_BYTE, out ? intRank : extRank, 0,
+                out ? extChunk.StateData() : intChunk.StateData(), chunkDataSize, MPI_BYTE, out ? extRank : intRank, 0,
+                out ? intChunk.StateData() : extChunk.StateData(), chunkDataSize, MPI_BYTE, out ? intRank : extRank, 0,
                 MPI_COMM_WORLD, &status);
         auto syncT1 = std::chrono::high_resolution_clock::now();
         syncTime += std::chrono::duration<float>(syncT1 - syncT0).count();
@@ -152,6 +155,7 @@ namespace PWFC
         PWFC::QChunk* sharedChunk = out ? &intChunk : &extChunk;
         return extRank == MPI_PROC_NULL ? nullptr : sharedChunk;
     }
+    
     int RunMPI(std::vector<QChunk> &result, int rank, int dim, int size, int length, unsigned int seed)
     {
         float execTime = 0;
@@ -159,13 +163,38 @@ namespace PWFC
         auto execT0 = std::chrono::high_resolution_clock::now();
 
         int chunkLength = std::max(iCeilDiv(length, dim * 3), MIN_CHUNK_LENGTH);
-        int chunkSize = chunkLength * chunkLength;
-        std::vector<PWFC::QChunk> localChunksData(9, chunkLength); // The 3x3 cells of local chunks
-        std::vector<PWFC::QChunk> sharedChunksData(9, chunkLength); // The 3x3 buffer of chunks to load from neighbor nodes
+        std::vector<PWFC::QChunk> localChunksData; // The 3x3 cells of local chunks
+        std::vector<PWFC::QChunk> sharedChunksData; // The 3x3 buffer of chunks to load from neighbor nodes
         std::array<PWFC::QChunk*, 9> localChunksRef = { }; // The 3x3 array of chunk references to send to PWFC
+        
+        localChunksData.reserve(9); 
+        sharedChunksData.reserve(9);
+        for(int i = 0; i < 9; i++)
+        {
+            localChunksData.emplace_back(chunkLength, MazeRule::MAX_ENTROPY);
+            sharedChunksData.emplace_back(chunkLength, MazeRule::MAX_ENTROPY);
+        }
 
         PWFC_LOG_INFO("[NODE_%d] Starting WFC with chunks of dimension %dx%d", rank, chunkLength, chunkLength);
         PWFC_LOG_INFO("[NODE_%d] Computation will produce a map %f%% bigger", rank, (float)(chunkLength * dim * 3 - length) / length * 100);
+
+        // Create ruleset 
+        std::vector<float> weights(MazeRule::MAX_ENTROPY, 1);
+        std::vector<Rule> rules;
+        for(int i = 0; i < MazeRule::MAX_ENTROPY; i++)
+        {
+            for (int j = 0; j < MazeRule::MAX_ENTROPY; j++) 
+            {
+                for(int d = 0; d < 4; d++)
+                {
+                    if(CanConnect(MazeRule::PATTERNS[i], MazeRule::PATTERNS[j], d))
+                    {
+                        rules.emplace_back(i, j, d);
+                    }
+                }
+            }
+        }
+        RuleSet ruleset(rules, weights, MazeRule::MAX_ENTROPY, seed);
 
         for(int round = 0; round < 9; round++)
         {
@@ -187,7 +216,8 @@ namespace PWFC
             }
 
             // Execute the algorithm
-            ErrCode err = Generate(localChunksRef, seed + rank + round * 33);
+            ruleset.SetSeed(ruleset.Seed() + round * 33 + rank * 17);
+            ErrCode err = Generate(localChunksRef, ruleset);
             if (err)
                 return err;
 
@@ -208,18 +238,25 @@ namespace PWFC
 
         // Final global buffer
         if (rank == 0) 
-            result.resize(9 * size, chunkLength); 
+        {
+            int resultSize = 9 * size;
+            result.clear();
+            result.reserve(resultSize);
+            for (int i = 0; i < resultSize; i++)
+                result.emplace_back(chunkLength, ruleset.MaxEntropy());
+        }
 
         // Gather all local 3x3 sections into the global map on Rank 0
-        int sendingBytes = chunkSize * sizeof(QPattern);
-        std::vector<QPattern> localBuffer(chunkSize * size); 
+        int sendingBytes = localChunksData[0].StateDataSize();
+        int stateBlockCount = sendingBytes / sizeof(BitsetBlock);
+        std::vector<BitsetBlock> localBuffer(sendingBytes / sizeof(BitsetBlock) * size); 
         for(int i = 0; i < 9; i++)
         {
             MPI_Gather(
-                localChunksData[i].Data(), sendingBytes, MPI_BYTE, // Send buffer
-                localBuffer.data(), sendingBytes, MPI_BYTE,     // Receive buffer (only relevant on root)
-                0,                                              // Root node receiving the data
-                MPI_COMM_WORLD                                  // Communicator
+                localChunksData[i].StateData(), sendingBytes, MPI_BYTE, // Send buffer
+                localBuffer.data(), sendingBytes, MPI_BYTE,        // Receive buffer (only relevant on root)
+                0,                                                 // Root node receiving the data
+                MPI_COMM_WORLD                                     // Communicator
             );
 
             // copy to the result buffer 
@@ -228,9 +265,9 @@ namespace PWFC
                 for(int r = 0; r < size; r++)
                 {
                     std::copy(
-                        localBuffer.begin() + r * chunkSize, 
-                        localBuffer.begin() + (r + 1) * chunkSize,
-                        result[r * 9 + i].begin()
+                        localBuffer.data() + r * stateBlockCount, 
+                        localBuffer.data() + (r + 1) * stateBlockCount,
+                        (BitsetBlock*)result[r * 9 + i].StateData()
                     );
                 }
             }
@@ -254,7 +291,7 @@ namespace PWFC
                 }
             }
 
-            bool validated = PWFC::Validate(buf, 3 * dim);
+            bool validated = PWFC::Validate(buf, ruleset, 3 * dim);
             if (!validated)
                 PWFC_LOG_ERROR("There was an error in the final check :(");
             else 
@@ -279,8 +316,8 @@ namespace PWFC
         
         int chunkLen = result[0].Length();
         int chunksPerSide = 3 * dim;
-        int width  = length * PATTERN_LENGTH;
-        int height = length * PATTERN_LENGTH;
+        int width  = length * MazeRule::PATTERN_LENGTH;
+        int height = length * MazeRule::PATTERN_LENGTH;
         PWFC_ASSERT(chunksPerSide * chunkLen >= length, "Invalid chunk size, too small! [real=%d, asked=%d]", chunksPerSide * chunkLen, length);
 
         std::vector<unsigned char> pixels(width * height * 3);
@@ -290,16 +327,16 @@ namespace PWFC
             for (int px = 0; px < width; ++px) 
             {
                 // Global chunk coordinates
-                int cx = px / (chunkLen * PATTERN_LENGTH);
-                int cy = py / (chunkLen * PATTERN_LENGTH);
+                int cx = px / (chunkLen * MazeRule::PATTERN_LENGTH);
+                int cy = py / (chunkLen * MazeRule::PATTERN_LENGTH);
 
                 // Pattern coordinates inside the current chunk
-                int p_x = (px / PATTERN_LENGTH) % chunkLen;
-                int p_y = (py / PATTERN_LENGTH) % chunkLen;
+                int p_x = (px / MazeRule::PATTERN_LENGTH) % chunkLen;
+                int p_y = (py / MazeRule::PATTERN_LENGTH) % chunkLen;
 
                 // Pixel coordinates inside the pattern
-                int px_in = px % PATTERN_LENGTH;
-                int py_in = py % PATTERN_LENGTH;
+                int px_in = px % MazeRule::PATTERN_LENGTH;
+                int py_in = py % MazeRule::PATTERN_LENGTH;
 
                 // Calculate which Rank / Node this chunk came from
                 int i = cy % 3;
@@ -326,7 +363,7 @@ namespace PWFC
                 } 
                 else 
                 {
-                    bool isBlack = q.State().Get(px_in, py_in); 
+                    bool isBlack = MazeRule::PATTERNS[q.State()].Get(px_in, py_in); 
                     unsigned char color = isBlack ? 0 : 255;
 
                     // Set RGB channels to either all 0 (black) or all 255 (white)
