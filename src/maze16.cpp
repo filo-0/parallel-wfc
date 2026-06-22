@@ -1,11 +1,15 @@
+#include "maze16.hpp"
+#include "types.hpp"
+#include "debug.hpp"
+
 #include <array>
+#include <cmath>
+#include "stb_image_write.h"
 
 namespace MazeRule 
 {
     /** This value determines the smaller edge length of a chunk. */
     constexpr int PATTERN_LENGTH = 3;
-    constexpr int PATTERN_COUNT = 16;
-    constexpr int MAX_ENTROPY = PATTERN_COUNT;
 
     constexpr bool TILE_PATTERNS[][PATTERN_LENGTH][PATTERN_LENGTH]
     {
@@ -162,4 +166,85 @@ namespace MazeRule
 
         return aOpen == bOpen;
     }
+    PWFC::RuleSet BuildRuleset(unsigned int seed) 
+    {
+        std::vector<float> weights(   MazeRule::MAX_ENTROPY, 1);
+        std::vector<PWFC::Rule> rules;
+        for(int i = 0; i < MazeRule::MAX_ENTROPY; i++)
+        {
+            for (int j = 0; j < MazeRule::MAX_ENTROPY; j++) 
+            {
+                for(int d = 0; d < 4; d++)
+                {
+                    if(CanConnect(MazeRule::PATTERNS[i], MazeRule::PATTERNS[j], d))
+                    {
+                        rules.emplace_back(i, j, d);
+                    }
+                }
+            }
+        }
+        return PWFC::RuleSet(rules, weights, MazeRule::MAX_ENTROPY, seed);
+    }
+
+    void SaveToImage(const std::vector<int> &map, int length, const std::string &filepath)
+    {
+        if(filepath == "")
+            return;
+        
+        int mapLength = (int)std::round(std::sqrt((double)map.size()));
+        PWFC_ASSERT(mapLength * mapLength == (int)map.size(), "Invalid map size!");
+        PWFC_ASSERT(mapLength >= length, "Invalid image length!");
+
+        int width  = length * MazeRule::PATTERN_LENGTH;
+        int height = length * MazeRule::PATTERN_LENGTH;
+
+        std::vector<unsigned char> pixels(width * height * 3);
+        
+        int i = 0;
+        for (int py = 0; py < height; ++py) 
+        {
+            for (int px = 0; px < width; ++px) 
+            {
+                int px_out = px / MazeRule::PATTERN_LENGTH;
+                int py_out = py / MazeRule::PATTERN_LENGTH;
+                int px_in  = px % MazeRule::PATTERN_LENGTH;
+                int py_in  = py % MazeRule::PATTERN_LENGTH;
+
+                int state = map[py_out * mapLength + px_out];
+                
+                if (state == PWFC::STATE_INVALID) 
+                {
+                    // Fallback color for uncollapsed/error cells (Red)
+                    pixels[i + 0] = 255;
+                    pixels[i + 1] = 0;
+                    pixels[i + 2] = 0;
+                } 
+                else 
+                {
+                    // From your PrintQChunk: state.Get() returns true for ' ' and false for '#'
+                    bool isBlack = MazeRule::PATTERNS[state].Get(px_in, py_in); 
+                    if (isBlack) 
+                    {
+                        pixels[i + 0] = 0;
+                        pixels[i + 1] = 0;
+                        pixels[i + 2] = 0;
+                    } // Black pixel
+                    else 
+                    {
+                        pixels[i + 0] = 255;
+                        pixels[i + 1] = 255;
+                        pixels[i + 2] = 255;
+                    }
+                }
+                i += 3;
+            }
+        }
+
+        int success = stbi_write_png(filepath.c_str(), width, height, 3, pixels.data(), width * 3);
+        
+        if(success)
+            PWFC_LOG_INFO("Successfully saved map to %s", filepath.c_str());
+        else 
+            PWFC_LOG_ERROR("Could not write PNG file to %s", filepath.c_str());
+    } 
 }

@@ -28,7 +28,7 @@ namespace PWFC
      * @param seed The seed of the number generator.
      * @return An non zero value if there is an error, 0 otherwise.
      */ 
-    int RunMPI(std::vector<QChunk> &result, int rank, int dim, int size, int length, unsigned int seed);
+    int RunMPI(std::vector<Chunk> &result, int rank, int dim, int size, int length, unsigned int seed);
 
     /**
      * Saves the input map to a ppm image file.
@@ -37,7 +37,7 @@ namespace PWFC
      * @length The number of cells on the side of the map.
      * @filepath The path to the output file to write.
      */ 
-    void SaveToImage(const std::vector<QChunk> &result, int dim, int length, const std::string &filepath);
+    void SaveToImage(const std::vector<Chunk> &result, int dim, int length, const std::string &filepath);
 
     /** Terminates the MPI environment. */ 
     void QuitMPI();

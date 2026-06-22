@@ -35,8 +35,8 @@ add_subdirectory("vendor/stb-image")
 find_package(MPI REQUIRED COMPONENTS CXX)
 include_directories("include")
 
-add_executable(mpipwfc "src/generation.cpp" "src/mpipwfc.cpp")
-add_executable(swfc "src/generation.cpp" "src/swfc.cpp")
+add_executable(mpipwfc "src/generation.cpp" "src/maze16.cpp" "src/mpipwfc.cpp")
+add_executable(swfc "src/generation.cpp" "src/maze16.cpp" "src/swfc.cpp")
 
 # Link the MPI::MPI_CXX target to your executable
 # This automatically handles include directories and compiler flags

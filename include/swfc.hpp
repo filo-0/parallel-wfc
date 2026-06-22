@@ -12,5 +12,5 @@ namespace PWFC
      * @length The number of cells on the side of the map.
      * @filepath The path to the output file to write.
      */ 
-    void SaveToImage(const QChunk &chunk, const std::string &filepath);
+    //void SaveToImage(const QChunk &chunk, const std::string &filepath);
 }

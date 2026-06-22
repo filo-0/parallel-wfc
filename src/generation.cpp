@@ -2,7 +2,6 @@
 #include <cassert>
 #include <random>
 #include <set>
-#include <functional>
 #include <vector>
 
 #include "pwfc.hpp"
@@ -11,7 +10,119 @@
 
 namespace PWFC 
 {
-    void QPattern::Collapse(std::mt19937 &rand, const std::vector<float> weights)
+/* ----------------------- QPATTERN ------------------------------ */
+
+    #define CEIL_DIV(n, d) (((n) + (d) - 1) / (d))
+
+    inline static void ClearOne(BitsetBlock *bits, int i) { bits[i / BITS_PER_BLOCK] &= ~(BitsetBlock(1) << (i % BITS_PER_BLOCK)); }
+    inline static void ClearAll(BitsetBlock *bits, int n) { std::fill(bits, bits + CEIL_DIV(n, BITS_PER_BLOCK), BitsetBlock(0)); }
+    inline static void Set(BitsetBlock *bits, int i)   { bits[i / BITS_PER_BLOCK] |= BitsetBlock(1) << (i % BITS_PER_BLOCK); }
+    inline static bool Get(const BitsetBlock *bits, int i) { return bits[i / BITS_PER_BLOCK] & (BitsetBlock(1) << (i % BITS_PER_BLOCK)); }
+    inline static int  Count(const BitsetBlock *bits, int n)
+    {
+        int acc = 0;
+
+#if defined(__GNUC__) || defined(__clang__)
+        int numBlocks = CEIL_DIV(n, BITS_PER_BLOCK);
+        for(int b = 0; b < numBlocks; b++)
+            acc += __builtin_popcountll((unsigned long long)bits[b]);
+#else 
+        for(int i = 0; i < _Size; i++)
+            acc += Get(i);
+#endif
+
+        return acc;
+    }
+    static int FindFirst(const BitsetBlock *bits, int n, int i = -1)
+    {
+#if defined(__GNUC__) || defined(__clang__) 
+
+        int startIdx = i + 1;
+        if (startIdx >= n) return n;
+
+        int blockIdx = startIdx / BITS_PER_BLOCK;
+        int bitOffset = startIdx % BITS_PER_BLOCK;
+
+        // Process the first block (which might be partially masked)
+        BitsetBlock block = bits[blockIdx];
+
+        // Mask out the bits before 'bitOffset'
+        block &= ~((BitsetBlock(1) << bitOffset) - 1); 
+
+        if (block != 0) 
+        {
+            int tz = __builtin_ctzll((unsigned long long)block);
+            int result = blockIdx * BITS_PER_BLOCK + tz;
+            return (result < n) ? result : n;
+        }
+
+        // Fast-scan the remaining full blocks
+        int numBlocks = CEIL_DIV(n, BITS_PER_BLOCK);
+        for(int b = blockIdx + 1; b < numBlocks; b++)
+        {
+            if (bits[b] != 0) // Skip empty blocks instantly
+            {
+                int tz = __builtin_ctzll((unsigned long long)bits[b]);
+                int result = b * BITS_PER_BLOCK + tz;
+                return (result < n) ? result : n;
+            }
+        }
+
+        return n;
+
+#else 
+        for(int j = i + 1; j < n; j++)
+            if(Get(bits, j))
+                return j;
+
+        return n;
+#endif
+    }
+
+    /** A quantum representation of a Pattern. */
+    class Cell
+    {
+    public:
+        Cell(BitsetBlock *state, int maxEntropy) : _State(state), _MaxEntropy(maxEntropy) { }
+
+        struct Iterator 
+        { 
+            int Idx;
+            const Cell *Ref;
+            inline void operator++() { Idx = FindFirst(Ref->_State, Ref->_MaxEntropy, Idx); } 
+            inline bool operator!=(const Iterator &other) const { return this->Idx != other.Idx; }
+        };
+        Iterator begin() const { return { FindFirst(_State, _MaxEntropy), this }; }
+        Iterator end()   const { return { _MaxEntropy, this }; }
+
+        inline void Clear(int i) { ClearOne(_State, i); }
+        inline int  State() const { return IsCollapsed() ? FindFirst(_State, _MaxEntropy) : STATE_INVALID; }
+        inline bool HasState(int i) const { return Get(_State, i); }
+        inline int  Entropy()       const { return Count(_State, _MaxEntropy); }
+        inline int  MaxEntropy()    const { return _MaxEntropy; }
+        inline bool IsCollapsed()   const { return Entropy() == 1; }
+        void Collapse(std::mt19937 &rand, const std::vector<float> weights);
+        void Collapse(int state);
+    private:
+        BitsetBlock *_State;
+        int _MaxEntropy;
+    };
+
+    class ConstCell
+    {
+    public:
+        ConstCell(const BitsetBlock *state, int maxEntropy) : _State(state), _MaxEntropy(maxEntropy) { }
+
+        inline int State() const { return IsCollapsed() ? FindFirst(_State, _MaxEntropy) : STATE_INVALID; }
+        inline bool HasState(int i) const { return Get(_State, i); }
+        inline int  Entropy()       const { return Count(_State, _MaxEntropy); }
+        inline int  MaxEntropy()    const { return _MaxEntropy; }
+        inline bool IsCollapsed()   const { return Entropy() == 1; }
+    private:
+        const BitsetBlock *_State;
+        int _MaxEntropy;
+    };
+    void Cell::Collapse(std::mt19937 &rand, const std::vector<float> weights)
     {
         float maxWeight = 0.f;
         for(Iterator p = begin(); p != end(); ++p)
@@ -29,14 +140,38 @@ namespace PWFC
         }
 
         int state = p.Idx;
-        _State.Clear();
-        _State.Set(state);
+        ClearAll(_State, _MaxEntropy);
+        Set(_State, state);
     }
-    void QPattern::Collapse(int state)
+    void Cell::Collapse(int state)
     {
-        _State.Clear();
-        _State.Set(state);
+        ClearAll(_State, _MaxEntropy);
+        Set(_State, state);
     }
+
+/* ----------------------------------- CHUNK ------------------------------------- */
+
+    Chunk::Chunk(int len, int maxEntropy) : 
+        _StateData(CEIL_DIV(maxEntropy, BITS_PER_BLOCK) * len * len, BitsetBlock(-1)), 
+        _Length(len), _MaxEntropy(maxEntropy), _StatePadding(CEIL_DIV(maxEntropy, BITS_PER_BLOCK)) { }
+
+    Cell Chunk::Get(int x, int y) { return Get(y * _Length + x); }
+    Cell Chunk::Get(int idx) { return { &_StateData[idx * _StatePadding], _MaxEntropy }; }
+    std::vector<int> Chunk::Build() const 
+    {
+        int size = Size();
+        std::vector<int> out(size, STATE_INVALID);
+
+        for (int i = 0; i < size; i++) 
+        {
+            const ConstCell p = { &_StateData[_StatePadding * i], _MaxEntropy };
+            out[i] = p.State();
+        }
+        return out;
+    }
+
+/* ----------------------------------- GENERATION ---------------------------------- */
+
     static inline int iOpposite(int dir) { return (dir + 2) % 4; }
     //static inline int iIdx(int x, int y, int chunkLen) { return y * chunkLen + x; }
     
@@ -46,23 +181,23 @@ namespace PWFC
     static inline int iNextX(int x, int dir) { return x + (2 - dir) % 2; }
     static inline int iNextY(int y, int dir) { return y + (1 - dir) % 2; }
 
-    struct iQPatternID
+    struct iCellID
     {
         int ID;
-        QPattern Pattern;
+        class Cell Cell;
         
-        inline iQPatternID(int id, QPattern pattern) : ID(id), Pattern(pattern) { } 
-        inline bool operator<(const iQPatternID &other) const
+        inline iCellID(int id, class Cell cell) : ID(id), Cell(cell) { } 
+        inline bool operator<(const iCellID &other) const
         { 
-            int thisEntropy  = Pattern.Entropy();
-            int otherEntropy = other.Pattern.Entropy(); 
+            int thisEntropy  = Cell.Entropy();
+            int otherEntropy = other.Cell.Entropy(); 
             if(thisEntropy == otherEntropy)
                 return ID < other.ID;
             return thisEntropy < otherEntropy;
         }
     };
 
-    static ErrCode iPropagate(std::set<iQPatternID> &uncollapsed, std::array<QChunk*, 9> &chunks, const RuleSet &ruleset, int centerX, int centerY)
+    static ErrCode iPropagate(std::set<iCellID> &uncollapsed, std::array<Chunk*, 9> &chunks, const RuleSet &ruleset, int centerX, int centerY)
     {
         struct iWave 
         { 
@@ -100,14 +235,14 @@ namespace PWFC
             if(chunks[toChunkId] == nullptr)
                 continue;
 
-            QChunk &fromChunk = *chunks[wave.Chunk];
-            QChunk &toChunk   = *chunks[toChunkId];
+            Chunk &fromChunk = *chunks[wave.Chunk];
+            Chunk &toChunk   = *chunks[toChunkId];
 
-            const QPattern &from = fromChunk.Get(wave.FromX, wave.FromY);
-                  QPattern &to   = toChunk  .Get(toX, toY);
+            Cell from = fromChunk.Get(wave.FromX, wave.FromY);
+            Cell to   = toChunk  .Get(toX, toY);
             
             // Current pattern in the uncollapsed set
-            iQPatternID p = { toX + toY * chunkLen, to };
+            iCellID p = { toX + toY * chunkLen, to };
 
             bool changed = false;
             for (auto i = to.begin(); i != to.end(); ++i)
@@ -142,7 +277,7 @@ namespace PWFC
             }
             else if(updatedEntropy != 1 && toChunkId == 4)
             {
-                p.Pattern = to;
+                p.Cell = to;
                 uncollapsed.emplace(p);
             }
             // else it has collapsed
@@ -155,7 +290,7 @@ namespace PWFC
         return ERR_OK;
     }
 
-    ErrCode Generate(std::array<QChunk*, 9>& chunks, const RuleSet &ruleset)
+    ErrCode Generate(std::array<Chunk*, 9>& chunks, const RuleSet &ruleset)
     {
         if(chunks[4] == nullptr || chunks[4]->Length() < MIN_CHUNK_LENGTH)
             return ERR_INVALID_INPUT;
@@ -164,10 +299,10 @@ namespace PWFC
         std::mt19937 rand(ruleset.Seed());
         int chunkLen = pivot.Length();
         
-        std::set<iQPatternID> uncollapsed;
+        std::set<iCellID> uncollapsed;
         for(int i = 0; i < pivot.Size(); i++)
         {
-            QPattern &p = pivot.Get(i);
+            Cell p = pivot.Get(i);
             if(p.Entropy() > 1)
                 uncollapsed.emplace(i, p);
             else if(p.Entropy() == 0)
@@ -176,7 +311,7 @@ namespace PWFC
 
         while(!uncollapsed.empty())
         {
-            iQPatternID p = *uncollapsed.begin();
+            iCellID p = *uncollapsed.begin();
             uncollapsed.erase(uncollapsed.begin());
             int idx = p.ID;
             
@@ -193,77 +328,46 @@ namespace PWFC
         return ERR_OK;
     }
 
-    bool iValidateBorders(const RuleSet &ruleset, const QChunk &a, const QChunk &b, int a2b)
-    {
-        PWFC_ASSERT(a.Length() == b.Length(), "Invalid chunk lengths!");
-
-        int chunkLen = a.Length();
-        int b2a = iOpposite(a2b);
-        int pax = iNextX(1, a2b) / 2 * (chunkLen - 1);
-        int pay = iNextY(1, a2b) / 2 * (chunkLen - 1);
-        int pbx = iNextX(1, b2a) / 2 * (chunkLen - 1);
-        int pby = iNextY(1, b2a) / 2 * (chunkLen - 1);
-        
-        for (int i = 0; i < chunkLen; i++) 
-        {
-            int stateA = a.Get(pax, pay).State();
-            int stateB = b.Get(pbx, pby).State();
-            if(!ruleset.Allows(stateA, stateB, a2b))
-                return false;
-
-            if(a2b % 2 == 0)
-                pax = ++pbx;
-            else 
-                pay = ++pby;
-        }
-        return true;
-    }
-    bool Validate(const std::vector<QChunk*> &chunks, const RuleSet &ruleset, int len)
+    bool Validate(const std::vector<int> &chunks, const RuleSet &ruleset, int len)
     {
         if(len * len != (int)chunks.size())
         {
             PWFC_LOG_ERROR("Invalid chunk array size!");
             return false;
         }
-
-        for (QChunk* chunk : chunks) 
+        
+        bool valid = true;
+        for(int i = 0; i < (int)chunks.size(); i++)
         {
-            if(!chunk)
+            int xi = i % len;
+            int yi = i / len;
+            int si = chunks[i];
+            
+            if(si == STATE_INVALID)
             {
-                PWFC_LOG_ERROR("Null chunk found!");
-                return false;
+                valid = false;
+                PWFC_LOG_ERROR("Found a cell with invalid entropy at (%d,%d)", xi, yi);
             }
-            for (QPattern p : *chunk) 
+            for(int d = 0; d < 4; d++)
             {
-                if(!p.IsCollapsed())
+                int xj = iNextX(xi, d);
+                int yj = iNextY(yi, d);
+                if(xj >= len || yj >= len || xj < 0 || yj < 0)
+                    continue;
+                int sj = chunks[xj + yj * len];
+                if(sj == STATE_INVALID)
                 {
-                    PWFC_LOG_ERROR("Found non collapsed cell!");
-                    return false;
+                    PWFC_LOG_ERROR("Found a cell with invalid entropy at (%d,%d)", xj, yj);
+                    valid = false;
+                }
+                else if(!ruleset.Allows(si, sj, d))
+                {
+                    PWFC_LOG_ERROR("Ruleset does not allow for %d-%d over direction %d at (%d,%d)", si, sj, d, xi, xj);
+                    valid = false;
                 }
             }
         }
 
-        for (int y = 0; y < len; y++) 
-        {
-            for (int x = 0; x < len; x++) 
-            {
-                QChunk &cur = *chunks[y * len + x];
-                for(int dir = 0; dir < 4; dir++)
-                {
-                    int ox = iNextX(x, dir);
-                    int oy = iNextY(y, dir);
-
-                    if(ox < 0 || oy < 0 || ox >= len || oy >= len)
-                        continue;
-                    const QChunk &other = *chunks[oy * len + ox];
-                    if(!iValidateBorders(ruleset, cur, other, dir))
-                    {
-                        PWFC_LOG_ERROR("Chunk (%d,%d) cant connect with chunk (%d,%d)", x, y, ox, oy);
-                        return false;
-                    }
-                }
-            }
-        }
-        return true;
+        return valid;
     }
 }
