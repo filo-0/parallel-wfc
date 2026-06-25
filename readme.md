@@ -2,7 +2,6 @@
 
 PWFC is a C++ implementation of the Wave Function Collapse (WFC) algorithm, designed to generate 2D tile-based maps.
 
-
 # Requirements
 To build and run this project, your system must have the following:
 
@@ -38,8 +37,8 @@ Build the Ruleset: Combine these into a `PWFC::RuleSet` object, providing the ru
 ```C++
 std::vector<PWFC::Rule> rules = { /* ... */ };
 std::vector<float> weights = { /* ... */ };
-int maxEntropy = 16; // Number of unique tiles
-unsigned int seed = 12345;
+int maxEntropy = /* Number of unique tiles */;
+unsigned int seed = /* Your seed */;
 
 PWFC::RuleSet ruleset(rules, weights, maxEntropy, seed);
 ```
@@ -52,11 +51,10 @@ Instantiate `PWFC::Chunk` objects with your desired side `length` and `maxEntrop
 
 Place pointers to these chunks into a `std::array<PWFC::Chunk*, 9>`.
 
-Important Note: The chunk to be generated must be placed at index 4 (the center). Missing or empty neighbors should be passed as nullptr.
-
+> **Important Note:** The chunk to be generated must be placed at index 4 (the center). Missing or empty neighbors should be passed as nullptr.
 
 ```C++
-int chunkLength = 16;
+int chunkLength = /* set your parameter */;
 PWFC::Chunk centralChunk(chunkLength, maxEntropy);
 
 // Setup the 3x3 neighborhood (flattened)
@@ -109,7 +107,7 @@ The above  will produce two sample executables in your build directory. Such pro
 
 Both executables share the same command-line interface for configuration.
 
-Command-Line Arguments
+**Command-Line Arguments:**
 - **-l or --length:** The base length dimension of the map. Default is 128 for MPI and 16 for Sequential.
 - **-o or --output:** The file path where the resulting PNG image will be saved.
 - **-s or --seed:** The random seed used for the WFC generation.
