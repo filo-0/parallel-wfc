@@ -1,13 +1,214 @@
 \section{Results}
-[Brief description and table and/or plot for each section]
+In this section we report all the results and statistics observed by the measurements taken described in the previous section. While some description will be available, a true interpretation of the data will be provided in the next section.
 
-\subsection{Execution time}
+\subsection{Execution Time}
+Comparing the execution time of the serial version of the program with respect to the MPI implementation with 1 single process (as reported in \autoref{fig:SerialeVSP1}), shows us that there are some relevant differences in the two methodologies. While this can be traced back to the difference in how time measurements were taken, we know that the two implementations share some important differences in how the computation is performed and thus this result can be expected.
 
-\subsection{Speedup and efficiency}
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+    width=0.5\textwidth,
+    ybar,
+    bar width=10pt,
+    enlarge x limits={abs=0.8cm},
+    xtick=data,
+    symbolic x coords={1000p,2000p,3000p,4000p,5000p,6000p},
+    xlabel={Image resolution (pixel per side)},
+    ylabel={Execution time (s)},
+    legend style={at={(0.5,-0.25)}, anchor=north, legend columns=-1},
+    ymin=0,
+    grid=major,
+    tick label style={font=\small},
+    scaled y ticks=false,
+    x tick label style={rotate=0, anchor=north}
+]
 
-\subsection{Comparison across topologies}
+% Serie 1 - Rosso, senza bordo
+\addplot+[ybar, fill=red!70, draw=black, text=black]
+    coordinates {(1000p,21.664200) (2000p,90.190200) (3000p,207.1538)(4000p,378.872600) (5000p,590.7812) (6000p,863.769600)};
+\addlegendentry{Serial (Red)}
 
-\subsection{Computation vs. communication}
+% Serie 2 - Verde, senza bordo
+\addplot+[ybar, fill=green!70, draw=black, text=black]
+    coordinates {(1000p,18.460) (2000p,77.782) (3000p,179.481) (4000p,324.730) (5000p,515.136) (6000p,750.065)};
+\addlegendentry{MPI P=1 (Green)}
+\end{axis}
+\end{tikzpicture}
+\caption{Analysis of execution time of the serial WFC algorithm with respect to the MPI implementation with P=1.}
+\label{fig:SerialeVSP1}
+\end{figure}
 
-\subsection{Scalability}
+And for a quick insight, we observe in \autoref{fig:6000time} that the program is actually able to benefit a lot of the parallelization.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+    width=0.5\textwidth,
+    ybar,
+    bar width=10pt,
+    enlarge x limits={abs=0.8cm},
+    xtick=data,
+    symbolic x coords={serial,P1,P4,P9,P16,P25,P36,P49,P64},
+    xlabel={Number of processes},
+    ylabel={Execution time (s)},
+    legend style={at={(0.5,-0.25)}, anchor=north, legend columns=-1},
+    ymin=0,
+    grid=major,
+    tick label style={font=\small},
+    scaled y ticks=false,
+    x tick label style={rotate=0, anchor=north}
+]
+
+% Serie 1 - Rosso, senza bordo
+\addplot+[ybar, fill=red!70, draw=black, text=black]
+    coordinates {(serial,863.769600) (P1,750.065) (P4,181.177) (P9,78.671) (P16,44.490) (P25,30.797) (P36,22.994) (P49,21.868) (P64,16.010)};
+
+\end{axis}
+\end{tikzpicture}
+\caption{Execution times for L=6000 with different number of processors.}
+\label{fig:6000time}
+\end{figure}
+
+
+\subsection{Speedup}
+Because of the differences observed in the previous paragraph, we analyze the speedup of the program as the \textbf{Relative Speedup} of the MPI program with P processes with respect to the execution of itself with one single process:
+
+$$
+\text{Speedup relativo: } S(p)=\frac{{T}_{parallel}(1)}{{T}_{parallel}(p)}
+$$
+
+Here the average speedup along the different problem size L is reported in figure \autoref{fig:Speedup} for each configuration of P processes:
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+    width=0.5\textwidth,
+    enlarge x limits={abs=0.8cm},
+    xtick=data,
+    symbolic x coords={P4,P9,P16,P25,P36,P49,P64},
+    xlabel={Number of processes (P)},
+    ylabel={Speedup},
+    legend style={at={(0.5,-0.25)}, anchor=north, legend columns=-1},
+    ymin=0,
+    grid=major,
+    tick label style={font=\small},
+    scaled y ticks=false,
+    x tick label style={rotate=0, anchor=north}
+]
+
+\addplot+[
+    color=red,
+    thick,
+    mark=*,
+    mark size=3pt,
+    mark options={fill=red}
+] coordinates {
+    (P4,4.16166666666)
+    (P9,9.31)
+    (P16,16.94833)
+    (P25,19.16833)
+    (P36,26.3)
+    (P49,29.11166666)
+    (P64,35.955)
+};
+
+\end{axis}
+\end{tikzpicture}
+\caption{Average speedup for the different number of processors.}
+\label{fig:Speedup}
+\end{figure}
+
+\subsection{Computation vs. Communication}
+In \autoref{fig:SynchGather} we observe the times required by the communication procedures: the send and receive used in the different steps of the algorithm (Synch procedure) and the final gather to reconstruct the image (Gather procedure).
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+    width=0.65\textwidth,
+    ybar,
+    bar width=10pt,
+    enlarge x limits={abs=0.8cm},
+    xtick=data,
+    symbolic x coords={P1,P4,P9,P16,P25,P36,P49,P64},
+    xlabel={Number of processes (P)},
+    ylabel={Time spent in procedure (s)},
+    legend style={at={(0.5,-0.25)}, anchor=north, legend columns=-1},
+    ymin=0,
+    grid=major,
+    tick label style={font=\small},
+    scaled y ticks=false,
+    x tick label style={rotate=0, anchor=north}
+]
+
+% Serie 1 - Rosso, senza bordo
+\addplot+[ybar, fill=red!70, draw=black, text=black]
+    coordinates {(P1,0.000000) (P4,0.643567) (P9,0.490717) (P16,0.405917) (P25,2.458300) (P36,2.828600) (P49,3.486433) (P64,3.576933)};
+\addlegendentry{Synch (Red)}
+
+% Serie 2 - Verde, senza bordo
+\addplot+[ybar, fill=green!70, draw=black, text=black]
+    coordinates {(P1,0.061233) (P4,0.069867) (P9,0.083483) (P16,0.093067) (P25,0.134933) (P36,0.235933) (P49,0.368283) (P64,0.486900)};
+\addlegendentry{Gather (Green)}
+\end{axis}
+\end{tikzpicture}
+\caption{Average synchronization times for the different number of processors.}
+\label{fig:SynchGather}
+\end{figure}
+
+\subsection{Strong Scaling Efficiency}
+With the analysis of the Strong Scaling statistic, we analyze the benefit of using more processors with problems of the same complexity: we are analyzing how efficiently we are making use of the processes.
+
+$$
+E(p)=\frac{S(p)}{p}=\frac{{T}_{parallel}(1)}{p*{T}_{parallel}(p)}
+$$
+
+The mean of such statistic for each configuration of P i reported in \autoref{fig:StrongScaling}.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+    width=0.5\textwidth,
+    bar width=10pt,
+    enlarge x limits={abs=0.8cm},
+    xtick=data,
+    symbolic x coords={P1,P4,P9,P16,P25,P36,P49,P64},
+    xlabel={Number of processes (P)},
+    ylabel={Efficiency (\%)},
+    legend style={at={(0.5,-0.25)}, anchor=north, legend columns=-1},
+    ymin=0,
+    grid=major,
+    tick label style={font=\small},
+    scaled y ticks=false,
+    x tick label style={rotate=0, anchor=north}
+]
+
+% Serie 1 - Rosso, senza bordo
+\addplot+[
+    color=green,
+    thick,
+    mark=*,
+    mark size=3pt,
+    mark options={fill=green}
+]
+coordinates {
+    (P1,100)
+    (P4,104.005)
+    (P9,103.451666)
+    (P16,105.925)
+    (P25,76.675)
+    (P36,73.05)
+    (P49,59.411666)
+    (P64,56.178333)
+};
+
+\end{axis}
+\end{tikzpicture}
+\caption{Analysis of the average Strong Scaling achieved with different number of processors (higher is better).}
+\label{fig:StrongScaling}
+\end{figure}
 

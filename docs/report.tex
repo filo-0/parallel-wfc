@@ -4,19 +4,60 @@
 \geometry{margin=1in}
 \usepackage{algorithm}
 \usepackage{algpseudocode}
-\usepackage{hyperref}
+\usepackage[hidelinks]{hyperref}
+\usepackage{amsmath}
+\usepackage{subcaption}
+
+\usepackage{tikz}
+\usepackage{tikz}
+\usepackage{tikz-3dplot}
+\usepackage{array}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage{pgfplotstable}
+\usepackage{adjustbox}
+\usetikzlibrary{matrix, shapes.geometric, arrows.meta, positioning, patterns.meta}
+\tikzset{
+  startstop/.style={rectangle, rounded corners, minimum width=3cm, minimum height=1cm,text centered, draw=black, fill=red!30},
+  process/.style={rectangle, minimum width=3cm, minimum height=1cm, text centered, draw=black, fill=blue!20},
+  decision/.style={diamond, aspect=2, minimum width=3cm, minimum height=1cm, text centered, draw=black, fill=red!30},
+  % cudaKernel_mio/.style={rectangle, minimum width=3cm, minimum height=1cm, text centered, draw=black, fill=green!20},
+  subprocess/.style={rectangle, dashed, minimum width=3.5cm, minimum height=1cm, text centered, draw=black, fill=yellow!20},
+  cudakernel/.style={
+    rectangle, 
+    minimum width=3.5cm, 
+    minimum height=1cm,
+    text centered,
+    draw=black, 
+    thick,
+    fill=green!30,
+%    pattern=north east lines,
+    pattern color=black
+  },
+  cudakernel_sub/.style={
+    rectangle, 
+    dashed,
+    minimum width=3.5cm, 
+    minimum height=1cm,
+    text centered,
+    draw=black, 
+    thick,
+    fill=green!30,
+%    pattern=north east lines,
+    pattern color=black
+  },
+  arrow/.style={thick,->,>=Stealth}
+}
 
 \title{\textbf{Parallel Computing Project Report:} \textit{Wave Function Collapse}}
 \author{Filippo Battisti, Simone Freschet, Francesco Bittasi}
 \date{Academic Year 2025/2026}
 
 \usepackage[backend=bibtex, style=numeric]{biblatex}
-\addbibresource{refs.bib} % Replace with your .bib file name
+\addbibresource{refs.bib} 
 
 \begin{document}
-
 \maketitle
-
 \input{sections/introduction.tex}
 \input{sections/sequential.tex}
 \input{sections/parallel.tex}

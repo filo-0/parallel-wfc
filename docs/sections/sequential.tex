@@ -1,15 +1,87 @@
-\section{Sequential algorithm}
+\section{Sequential Algorithm}
 
-\subsection{Problem definition}
-Formal definition: inputs, outputs, constraints, notation used throughout the report.
+This section outlines the standard sequential implementation of the Wave Function Collapse algorithm, framing procedural generation as a formal constraint satisfaction problem. By detailing the core observation and propagation loop alongside its computational complexities, we establish the baseline mechanics and highlight the strict global data dependencies that pose challenges for future parallelization.
 
-\subsection{Algorithm and complexity}
-Describe the standard sequential algorithm you parallelize. State its time and space complexity and, where relevant, its data-dependency structure that is what your parallel design has to respect.
+\subsection{Problem Definition}
 
-\begin{algorithm}[h]
-\caption{Sequential your super cool algorithm}
+The WFC algorithm frames procedural generation as a constraint satisfaction problem. Let the generation domain be a 2D grid $G$ of dimensions $\sqrt{N} \times \sqrt{N}$, containing a total of $N$ cells. 
+
+\begin{itemize}
+    \item \textbf{Inputs:} 
+    \begin{itemize}
+        \item A discrete set of possible tile states or patterns, $T = \{t_1, t_2, \dots, t_k\}$.
+        \item A set of adjacency constraints $C$, which dictate whether state $t_a$ can be placed adjacent to $t_b$ in a specific direction $d_{ab} \in \{\text{up, down, left, right}\}$.
+        \item A set of weights $W$, representing the frequency or probability of each state appearing.
+    \end{itemize}
+    
+    \item \textbf{State Representation:} Each cell $c_{ij} \in G$ maintains a superposition of currently valid states, denoted as $S_{ij} \subseteq T$ and its entropy $|S_{ij}|$. Initially, the state is completely unobserved, meaning $S_{ij} = T$ for all $c_{ij}$.
+    
+    \item \textbf{Outputs:} A fully collapsed grid where every cell has exactly one valid state ($|S_{ij}| = 1$), satisfying all constraints in $C$. If any cell's entropy reaches zero, the grid contains an unresolvable contradiction, resulting in a failure state.
+\end{itemize}
+
+\subsection{Algorithm and Complexity}
+The standard sequential WFC algorithm loops continuously through two primary phases: Observation and Propagation.
+
+\begin{enumerate}
+    \item \textbf{Observation:} The algorithm finds the uncollapsed cell (where $|S_{ij}| > 1$) with the lowest entropy to reduce the possibility of future contradictions (zero-entropy states). This phase is implemented with a priority queue extraction to ensure $\mathcal{O}(\log N)$ lookup time. The chosen cell is then collapsed by pseudo-randomly selecting a single state from its remaining superposition, guided by the input weights $W$.
+    
+    \item \textbf{Propagation:} Once a cell is collapsed, its updated state restricts the valid states of its immediate neighbors. The algorithm recursively propagates these restrictions outward: if a neighbor's superposition is reduced, the propagation continues, and its subsequent neighbors are checked. This cascading chain reaction continues until the neighbor states are no longer affected.
+\end{enumerate}
+
+When the whole grid has been collapsed, and thus the priority queue is empty, the execution stops.
+
+\begin{algorithm}[H]
+\caption{Sequential Wave Function Collapse}
 \begin{algorithmic}[1]
-\State \textit{// Implementation details}
+\State \textbf{Input:} Grid $G$ of dimensions $\sqrt{N} \times \sqrt{N}$, Tile set $T$, Constraints $C$ and Weights $W$.
+\State \textbf{Output:} Collapsed grid $G$ or \textproc{Failure}
+\For{$i,j \gets 0$ to $\sqrt{N}-1$}
+    \State $S_{ij} \gets T$
+\EndFor
+\State $Q \gets G$ \Comment{Add all cells to the priority queue}
+\While{$Q.\textproc{NotEmpty}()$}
+    \State $c_{min} \gets Q.\textproc{GetMin()}$ 
+    \If{$|S_{c_{min}}| = 0$}
+        \State \Return \textproc{Failure} \Comment{Contradiction: A cell has 0 possible states}
+    \EndIf
+    
+    \State $t \gets \textproc{RandomState}(W,S_{c_{min}})$
+    \State $S_{c_{min}} \gets \{t\}$ \Comment{Collapse the cell to a single state}
+
+    \For{$n \in \textproc{Neighbors}(c_{min})$}
+        \State \textproc{Propagate}($c_{min}, n, Q, G, C$)
+    \EndFor 
+\EndWhile
+
+\State \Return $G$
+
+\vspace{1em}
+
+\Function{Propagate}{$a, b, Q, G, C$}
+    \State $d_{ab} \gets$ direction from $a$ to $b$
+    \State $Removed \gets \textproc{false}$
+    \For{$t \in S_b$}
+        \If{no state in $S_a$ allows $t$ based on $C, d_{ab}$}
+            \State $S_b \gets S_b \setminus \{t\}$
+            \State $Removed \gets \textproc{true}$
+        \EndIf
+    \EndFor
+    \If{$Removed$} \Comment{Neighbor modified, must propagate further}
+        \State $Q.\textproc{Update}(b)$ \Comment{Update neighbor's entropy in queue}
+        \For{$n \in \textproc{Neighbors}(b) \setminus \{a\}$}
+            \State \textproc{Propagate}($b, n, Q, G, C$)
+        \EndFor 
+    \EndIf
+\EndFunction
+
 \end{algorithmic}
 \end{algorithm}
 
+\paragraph{Time Complexity} 
+
+Let $|T|$ be the total number of possible states. Across the entire execution of the algorithm, a state can be removed from a cell at most $N \cdot |T|$ times. Processing each removal requires evaluating the constraints against the 4 adjacent neighbors, taking $O(|T|)$ time per neighbor. Therefore, the amortized time complexity of the propagation phase across all iterations is $\mathcal O(N \cdot |T|^2)$. Furthermore, priority queue operations take $\mathcal O(\log N)$ time per update and extraction. Because a cell's priority must be updated each time its entropy drops, which can occur up to $N \cdot |T|$ times, standard implementations yield an overall time complexity of $\mathcal O(N \cdot |T|^2 + N \cdot |T| \log N)$.
+    
+\paragraph{Space Complexity} The algorithm must store the superposition matrix for the entire grid, which requires $\mathcal{O}(N \cdot |T|)$ space, while the entropy priority queue requires at most $\mathcal{O}(N)$ space. Additionally, evaluating the adjacency constraints using a 3-dimensional bit-matrix (states $\times$ states $\times$ directions) requires $\mathcal{O}(|T|^2)$ space. Therefore, the overall space complexity is bounded by $\mathcal{O}(N \cdot |T| + |T|^2)$.
+
+\paragraph{Data-Dependency Structure}
+The core data dependency in WFC lies in the propagation stack. A single collapse at cell $c_{ij}$ can trigger a cascading chain reaction of state removals that ripples across the entire grid $G$. This creates a highly strict, dynamic, and non-local dependency structure: the state of any given cell relies entirely on the successful resolution of constraints originating from completely unpredictable, distant coordinates. This inherently sequential, globally linked constraint propagation is exactly what makes the algorithm difficult to parallelize. As we will see in the following section, however, once a strict limitation in the propagation diameter is determined, a parallel implementation of the algorithm becomes feasible.

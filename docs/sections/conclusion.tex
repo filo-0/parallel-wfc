@@ -1,3 +1,45 @@
 \section{Conclusions}
-[5-10 sentences. The headline result and the main lesson learned.]
 
+Developing this project and authoring the accompanying software has been a highly rewarding endeavor, demanding extensive research and dedication. We are deeply satisfied with the final outcomes. Our sole regret stems from the necessity to omit a few sections originally prepared during the development phase, specifically:
+
+\begin{itemize}
+    \item \textbf{Further properties of $Maze_{16}$}
+    \item \textbf{Extended analysis on Tile Theory}
+    \item \textbf{Insights into the parallel development of the post-pipelining phase} mentioned in the discussion.
+    \item \textbf{Further performance analysis} regarding the bottlenecks imposed by CAPRI and job scheduling.
+\end{itemize}
+
+In particular, the parallel properties were excluded as they would have significantly burdened the narrative without introducing substantial actionable insights.
+
+Regarding the software performance, we are exceptionally pleased to have successfully achieved meaningful parallelization on an algorithm that is notoriously difficult to manage concurrently. The performance gains are highly encouraging, notably yielding a superlinear speedup on a single machine. While the extra-socket synchronization overhead was expected, it becomes negligible relative to the generation time as the chunk size increases.
+
+In conclusion, this project delivers a highly modular framework that generates coherent procedural outputs when paired with any user-defined tileset that respects the necessary propagation constraints.
+
+\subsection{Declaration on Generative AI}
+During the preparation of this work, the authors utilized AI-based tools exclusively to assist in the drafting, refining, and formatting of the manuscript's text, ensuring that all core concepts and scientific contributions remain original. Additionally, AI technologies were employed to generate local automation scripts for experimental testing, as well as for the subsequent gathering and organization of the resulting data. Following the generation or editing of any content, the authors reviewed, curated, and edited the material, and take full responsibility for the accuracy and integrity of the final paper.
+
+\subsection{Examples of Generated Images}
+\begin{figure}[H]
+    \centering
+    \includegraphics[scale=1]{figs/maze64x64.png}
+    \hspace{10mm}
+    \includegraphics[scale=1]{figs/maze64x64_1.png}
+    \caption{Mazes generated on grids 64x64.}
+\end{figure}
+\vspace{0.5cm}
+\begin{figure}[H]
+    \centering
+    \includegraphics[scale=0.5]{figs/maze128x128.png}
+    \hspace{10mm}
+    \includegraphics[scale=0.5]{figs/maze128x128_1.png}
+    \caption{Mazes generated on grids 128x128.}
+\end{figure}
+\vspace{0.5cm}
+\begin{figure}[H]
+    \centering
+    \includegraphics[scale=0.25]{figs/maze256x256.png}
+    \hspace{10mm}
+    \includegraphics[scale=0.25]{figs/maze256x256_1.png}
+        \caption{Mazes generated on grids 256x256.}
+
+\end{figure}

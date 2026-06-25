@@ -1,8 +1,162 @@
-\section{MPI implementation notes}
+\section{MPI Implementation Notes}
 
-\subsection{Language and build}
-[State the language (C, C++, Rust, Java, Python via mpi4py, \dots) Why this language?]
+Transitioning the Wave Function Collapse algorithm to a parallel architecture requires overcoming the challenge of its inherently non-local constraint propagation. This section details the project's C++17 and MPI implementation, focusing on the domain decomposition, iterative boundary synchronization, and data aggregation strategies designed to achieve scalable, high-performance generation.
 
-\subsection{Topology realisation in MPI}
-Discuss how each topology is realised and the typical MPI primitives used and justify why.
+\subsection{Language and Build}
 
+This project is implemented in C++ (specifically utilizing C++17 standard). C++ was chosen for its high execution performance, which is critical for handling computationally intensive constrained algorithms like Wave Function Collapse. Additionally, it provides low-level memory control alongside zero-cost abstractions. For instance, using structures like \textit{bit arrays} allows for a highly efficient representation of pattern superpositions, while the language natively interfaces with the standard MPI C interface.
+
+\subsection{Notes on the Source Code}
+
+The codebase is designed with a strong emphasis on modularity, strictly decoupling the core Wave Function Collapse algorithm from specific tileset definitions and constraints. The system relies on discrete data structures: a \texttt{PWFC::RuleSet} object encapsulates the user-defined adjacency rules and pattern weights, while \texttt{PWFC::Chunk} objects manage the local spatial grids. 
+
+Because the central \texttt{PWFC::Generate()} routine operates on an abstract $3 \times 3$ matrix of these chunks, the underlying algorithm remains completely agnostic to the actual semantics or visual representation of the patterns being processed. This structural separation ensures that the library can easily accommodate custom rulesets and be integrated into external C++ projects, as demonstrated by the provided sequential and MPI-based \texttt{maze16} applications.
+
+\subsection{Domain Decomposition and Process Topology}
+As stated in section \ref{sec:parallel} the physical generation space is partitioned into a 2D grid of processors. The implementation thus requires the total number of processors ($P$) to be a perfect square. 
+
+Rather than assigning a single contiguous matrix to each node, the spatial domain within each process is further subdivided into a $3 \times 3$ local grid of chunk instances. This hierarchical subdivision is a deliberate architectural choice designed to facilitate stepwise, overlapping boundary resolution.
+
+\subsection{Iterative Overlapping and Synchronization}
+
+Because WFC requires contextual awareness of neighboring states to properly collapse each chunk, completely independent parallel generation would result in severe boundary discontinuities. The codebase solves this using a 9-round iterative execution strategy:
+
+\begin{itemize}
+    \item \textbf{Dynamic Pivoting:} Over the course of 9 rounds, each process shifts its computational focal point, called the pivot, across its local $3 \times 3$ grid.
+    
+    \item \textbf{Halo Exchange:} When the $3 \times 3$ working window for a specific round extends beyond the local processor's domain, the node exchanges chunks with adjacent nodes. The synchronization pass uses \texttt{MPI\_Sendrecv} to simultaneously dispatch local boundary chunks and ingest neighbor boundary chunks, effectively preventing deadlocks during the swap (The specific mathematical routing for this exchange is detailed below).
+    
+    \item \textbf{Implicit Boundary Handling:} The algorithm handles the global boundaries of the map by evaluating target ranks. Therefore, if a neighbor is out of bounds, the system automatically ignores communication to this out-of-bound node, allowing an unified communication logic without complex branching for edge nodes.
+    
+    \item \textbf{Bidirectional Updates:} After the core sequential WFC algorithm mutates the combined local and shared chunks, a second synchronization pass writes the modified neighbor states back to their original nodes. This ensures that entropy reduction and constraints propagated into halo regions are securely integrated into the global state.
+    
+\end{itemize}
+
+\subsubsection{Halo Exchange}
+To execute the Halo Exchange described above, the logic for routing chunks between neighboring processes relies on mapping 2D spatial offsets to absolute MPI ranks. Because each process acts as a local grid, its boundaries must seamlessly interface with the corresponding boundaries of adjacent nodes.
+
+To determine where a chunk is sent and from where a alternative chunk is retrieved, the algorithm maps coordinates using three distinct layers:
+
+\begin{enumerate}
+    \item \textbf{Global Node Coordinates:} Every processor calculates its own 2D position within the processor grid using its global rank $r$, and the grid dimension, $\sqrt P$:
+    $$x_r = r \mod \sqrt P, \quad y_r = \left\lfloor \frac r{\sqrt P}\right\rfloor$$
+    
+    \item \textbf{The Local Window Offset:} During a given execution round, the algorithm centers its focus on a \textit{pivot} chunk $(x_p, y_p)$ within its local $3 \times 3$ grid. The index of the neighbor $i\in[0,8]$ being evaluated produces a relative direction vector ranging from $-1$ to $1$. The target destination within the global space is calculated via an offset:
+    
+    $$x = x_p + (i \mod3) - 1,\quad y = y_p + \left\lfloor \frac i3 \right\rfloor - 1$$
+    
+    If either $x$ or $y$ falls outside the valid local range $[0, 2]$, the chunk crosses a processor boundary, triggering an external network exchange. It must be stated how the resulting values of $x$ and $y$ are confined in the range $[-1,3]$.
+
+    \item \textbf{Directional Vector Evaluation:} The boundary crossing establishes a directional vector $(dx_r, dy_r)$ indicating which neighboring processor holds the desired boundary data:
+    $$
+    dx_r = \begin{cases} 
+        +1 & \text{if } x = 3  \\ 
+        -1 & \text{if } x = -1 \\ 
+        0  & \text{otherwise} %MAGARI MEGLIO RIPETERE 0\le x\le2
+    \end{cases}, \quad    
+    dy_r = \begin{cases} 
+        +1 & \text{if } y = 3  \\
+        -1 & \text{if } y = -1 \\ 
+        0  & \text{otherwise}
+    \end{cases}$$
+    
+\end{enumerate}
+
+\paragraph{The Send-Receive Logic}
+A unique aspect of the design is how it maps the \textit{receiving} node versus the \textit{sending} node during a single \texttt{MPI\_Sendrecv} call. 
+
+When a node needs to read external data from a specific neighbor, it must simultaneously send a boundary chunk to the node on the exact \textit{opposite} side to prevent deadlocks. The target ranks are calculated by projecting the directional vectors forward and backward from the current node's coordinates:
+\begin{itemize}
+    \item \textbf{Send Target Node:} located at $(x_r - dx_r, y_r - dy_r)$.
+    \item \textbf{Receive Target Node:} located at $(x_r + dx_r, y_r + dy_r)$.
+\end{itemize}
+
+During the subsequent synchronization phase, this geometric mapping is inverted: the modified chunk data is returned to the owner processor while the updated internal data is received from the borrower node, completing the bidirectional synchronization cycle.
+
+\subsection{Centralized Aggregation and Output}
+Once the 9 execution rounds conclude, the distributed map must be reconstructed.
+
+\begin{itemize}
+    \item \textbf{Data Gathering:} The implementation leverages \texttt{MPI\_Gather} iteratively (once for each of the 9 local chunk indices). All processes stream their collapsed chunk byte data to the root process (\texttt{Rank 0}).
+    
+    \item \textbf{Validation and Serialization:} Post-gathering, \texttt{Rank 0} translates the flat gathered buffers into a contiguous global chunk layout. A centralized validation pass acts as a safety mechanism to verify that all cells have been correctly collapsed, and that all chunk borders respect the ruleset constraints. 
+
+    \item \textbf{File I/O:} Finally, \texttt{Rank 0} exclusively handles serialization, translating the chunk representation into a single \texttt{PNG} image, thanks to the open source library \texttt{stb-image}\cite{stbimage}. This successfully decouples the parallel computation from the filesystem, avoiding concurrent write bottlenecks.
+\end{itemize}
+
+
+
+\begin{figure}[H]
+\definecolor{ext_green}{rgb}{0.1, 0.6, 0.4}
+\definecolor{int_red}{rgb}{0.9, 0.2, 0.3}
+\caption{This picture illustrates the halo exchange during runtime.}
+\centering
+\begin{subfigure}[b]{0.48\textwidth}
+\centering
+\begin{tikzpicture}
+    % Draw a thin grid from (0,0) to (5,5)
+    \draw[step=1cm, gray, thin] (0,0) grid (5,5);
+    \draw[ultra thick, dotted, white] (0,0) rectangle (5,5);
+    
+    \begin{scope}[very thick, black]
+        % Horizontal node boundaries
+        \draw (0,1) -- (5,1);
+        \draw (0,4) -- (5,4);
+        
+        % Vertical node boundaries
+        \draw (1,0) -- (1,5);
+        \draw (4,0) -- (4,5);
+    \end{scope}
+    
+    \draw[very thick, dotted, black] (0,0) rectangle (3,3);
+    
+    \draw[<->, >=Stealth, thick, ext_green] (0.3, 0.3) -- (0.8, 0.8);
+    \draw[<->, >=Stealth, thick, ext_green] (1.5, 0.2) -- (1.5, 0.8);
+    \draw[<->, >=Stealth, thick, ext_green] (2.5, 0.2) -- (2.5, 0.8);
+    \draw[<->, >=Stealth, thick, ext_green] (0.2, 1.5) -- (0.8, 1.5);
+    \draw[<->, >=Stealth, thick, ext_green] (0.2, 2.5) -- (0.8, 2.5);
+
+    \draw[<->, >=Stealth, thick, int_red] (1.5, 3.2) -- (1.5, 3.8);
+    \draw[<->, >=Stealth, thick, int_red] (2.5, 3.2) -- (2.5, 3.8);
+    \draw[<->, >=Stealth, thick, int_red] (3.3, 3.3) -- (3.8, 3.8);
+    \draw[<->, >=Stealth, thick, int_red] (3.2, 1.5) -- (3.8, 1.5);
+    \draw[<->, >=Stealth, thick, int_red] (3.2, 2.5) -- (3.8, 2.5);
+    
+\end{tikzpicture}
+\caption{The representation of the chunk exchanges during round 1 of 9.}
+\end{subfigure}
+\hfill 
+\begin{subfigure}[b]{0.48\textwidth}
+\centering
+\begin{tikzpicture}
+    % Draw a thin grid from (0,0) to (5,5)
+    \draw[step=1cm, gray, thin] (0,0) grid (5,5);
+    \draw[ultra thick, dotted, white] (0,0) rectangle (5,5);
+    
+    \begin{scope}[very thick, black]
+        % Horizontal node boundaries
+        \draw (0,1) -- (5,1);
+        \draw (0,4) -- (5,4);
+        
+        % Vertical node boundaries
+        \draw (1,0) -- (1,5);
+        \draw (4,0) -- (4,5);
+    \end{scope}
+    
+    % The context window shifted to the East (Round 6)
+    \draw[very thick, dotted, black] (2,1) rectangle (5,4);
+    
+    % READ: Arrows bringing data IN from the East neighbor
+    \draw[<->, >=Stealth, thick, ext_green] (4.8, 1.5) -- (4.2, 1.5);
+    \draw[<->, >=Stealth, thick, ext_green] (4.8, 2.5) -- (4.2, 2.5);
+    \draw[<->, >=Stealth, thick, ext_green] (4.8, 3.5) -- (4.2, 3.5);
+
+    % SEND: Arrows pushing unused data OUT to the West neighbor
+    \draw[<->, >=Stealth, thick, int_red] (1.8, 1.5) -- (1.2, 1.5);
+    \draw[<->, >=Stealth, thick, int_red] (1.8, 2.5) -- (1.2, 2.5);
+    \draw[<->, >=Stealth, thick, int_red] (1.8, 3.5) -- (1.2, 3.5);
+    
+\end{tikzpicture}
+\caption{The representation of the chunk exchanges during round 6 of 9.}
+\end{subfigure}
+\end{figure}

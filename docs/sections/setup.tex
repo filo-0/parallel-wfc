@@ -1,9 +1,61 @@
 \section{Experimental setup}
-Hardware. Machine(s) used: CPU model, core count, memory, interconnect (if multi-node).
 
-[If single-machine, state that all ``processes'' map to cores of the same node and that the topology is therefore logical, not physical.]
+To rigorously evaluate the scalability and efficiency of our parallel Wave Function Collapse implementation, we conducted a series of benchmark experiments. This section details the experimental framework used to validate our architecture. Below, we outline the hardware specifications of the computing environment, define the parameters and methodology guiding our test cases, and describe the specific timing mechanisms used to isolate and measure computational and communication overhead.
 
-Inputs. [How inputs were generated (distribution, seed), input sizes tested, and any preprocessing.]
+\subsubsection{CAPRI infrastructure}
+All measurements were conducted on the CAPRI HPC infrastructure of the University of Padua.
+Born as a research project to improve the HPC capabilities of the university, differentiating himself from the already available computing resources, this system features:
+\begin{itemize}
+    \item 16 Intel® Xeon® Gold 6130 CPU (16 cores @ 2.10GHz)
+    \item 6 TB DDR4 RAM 
+    \item 2 NVIDIA Tesla P100 GPU (3584 Cuda® Cores, 16 GB HBM2)
+\end{itemize}
 
-Methodology. [Number of repetitions per configuration, what is averaged or reported, how time is measured, and how compute time is separated from communication time.]
+Without considering the GPU's (not used for this project), the CAPRI infrastructure has a theoretical peak performance (FMA single precision) of about 31 TFLOPS.
 
+\subsubsection{Nodes mapping}
+The CAPRI infrastructure features an high level abstraction that allows our application to see only one big system with 16 CPU's and 6TB of RAM, considering all CPU's fully interconnected.
+
+The execution of our jobs on the the machine was realized via a SLURM scheduler. For this reason we weren't able to strictly choose the processors and communications used, so we expect some noise from the mapping and the other jobs running on the machine.
+
+\subsection{Methodology}
+To observe the average performance of the program, we executed 5 runs with different random seeds (being the running time dependent on randomness) for each configuration of
+\begin{itemize}
+    \item \textbf{number of processes P}
+    \item \textbf{size of the problem L}: the lenght of the side of the image
+\end{itemize}
+The same 5 seeds were used for each configuration, in this way the problem complexity was proportional to each other and thus the measumements were true indicators of the scalability of the algorithm.
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{|c|c|}
+\hline
+\textbf{Parameter} & \textbf{Values} \\
+\hline
+Problem size $L$ &
+$\{1000, 2000, 3000, 4000, 5000, 6000\}$ \\
+\hline
+MPI processes $P$ &
+$\{1, 4, 9, 16, 25, 36, 49, 64\}$ \\
+\hline
+Seeds $S$ &
+$\{123, 456, 789, 1123, 1456\}$ \\
+\hline
+\end{tabular}
+\caption{Experimental parameter space}
+\end{table}
+
+Being the jobs queued with respect to the amount of resources required, we scheduled one job for each P. Each job ran all of the 5 runs for each configuration of L.
+
+Having executed all the jobs, python scripts were used to gather the data from the logs and conduct the analysis reported in the next section.
+
+\subsubsection{Measurements}
+While for the serial algorithm, the computation wall clock time was measured via the \texttt{clock\_gettime()} function, for the MPI implementation we used the integrated function \texttt{MPI\_Wtime()}: this may cause some differences in the observations made later.
+
+In both cases the rendering time of the image on the output file as been kept out of the measurement: we only observe the total computation time of the algorithm and, in the case of the MPI implementation, we track the time spent in the communications.
+The two communication times are obtained measuring the time spent in functions \texttt{MPI\_Sendrecv()} and \texttt{MPI\_Gather()} for each node and then taking the maximum for each run.
+
+\subsubsection{Notes}
+While using a shared cluster with SLURM made the process of putting into execution the different tests very easy, the fact that it is a shared platform where big projects are constantly running made it impossible for us to test bigger configurations. At the time of writing, jobs with more than 64 processes have not yet been executed.\
+
+Because of this it's impossible for us to have a complete insight on how the system scales, but we are still able to conduct some useful analysis on the lower "resources-hungry" tests and make some assumptions on how it would perform.

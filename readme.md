@@ -120,8 +120,9 @@ To generate a map using a single process:
 ./maze16-wfc -l 32 -s 12345 -o output_seq.png
 ```
 
-## Running in Parallel (MPI)
-Important: The MPI application must be run with a perfect squared number of processes (e.g., 1, 4, 9, 16).
+## Running in Parallel
+
+> **Important:** The MPI application must be run with a perfect squared number of processes (e.g., 1, 4, 9, 16).
 
 ```bash
 mpirun -np 4 ./maze16-mpi-wfc -l 128 -s 98765 -o output_mpi.png

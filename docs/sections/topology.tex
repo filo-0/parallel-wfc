@@ -1,9 +1,527 @@
-\section{Topology-aware implementation}
+\section{Topology-Aware Implementation}
 
-\subsection{Topologies considered}
-[State the topologies you implement and why. Examples (non-exhaustive): linear array, ring, 2D mesh, 2D torus.]
+Transitioning the conceptual parallel design to physical hardware requires a specialized network mapping and strict algorithmic guarantees. This section details the adoption of the King's Graph topology to facilitate exchanges between all adjacent nodes. To mathematically validate that this localized communication is sufficient, we introduce $\texttt{Maze}_{16}$, a custom tileset designed specifically to bound the WFC propagation radius, ensuring that no cascading updates ever breach the isolated subdomains.
 
-\subsection{Embedding the communication pattern}
-[Topology 1]. [How the algorithm's communication maps onto this topology.]
+\subsection{Topologies Considered}
+The communication pattern of the algorithm, described in the previous section,
+requires each node to exchange data with all its immediate geometric neighbors,
+including those in diagonal directions. A standard 2D mesh with 4 neighbors is
+therefore insufficient: diagonal communications would require multi-hop routing
+through intermediate nodes, introducing additional latency and unnecessary
+synchronizations not required by the algorithm.
 
-[Topology 2]. [Same as above for the next topology. Highlight the qualitative difference.]
+The adopted topology is the King's Graph, a two-dimensional grid in
+which each node is connected to its 8 immediate geometric neighbors both
+orthogonal and diagonal. This choice allows the algorithm's communication pattern
+to be mapped directly onto the physical topology, guaranteeing that every data
+exchange occurs in a single hop, without intermediaries.
+
+\begin{figure}[H]
+\centering
+\adjustbox{max width=\textwidth}{
+\setlength{\fboxsep}{10pt} % imposta il padding a 10pt
+\fbox{
+\begin{minipage}{0.8\linewidth}
+    \centering 
+    \begin{tikzpicture}[scale=0.7]
+    
+    \node at (2.25,1) {2D mesh};
+
+    \draw[step=1cm, black, thick] (0,0) circle (0.25);
+    \draw[step=1cm, black, thick] (1.5,0) circle (0.25);
+    \draw[step=1cm, black, thick] (3,0) circle (0.25);
+    \draw[step=1cm, black, thick] (4.5,0) circle (0.25);
+    \draw[black!80, thick] (0.4,0) -- (1.1,0);
+    \draw[black!80, thick] (1.9,0) -- (2.6,0);
+    \draw[black!80, thick] (3.4,0) -- (4.1,0);
+
+    \draw[step=1cm, black, thick] (0,-1.5) circle (0.25);
+    \draw[step=1cm, black, thick] (1.5,-1.5) circle (0.25);
+    \draw[step=1cm, black, thick] (3,-1.5) circle (0.25);
+    \draw[step=1cm, black, thick] (4.5,-1.5) circle (0.25);
+    \draw[black!80, thick] (0.4,-1.5) -- (1.1,-1.5);
+    \draw[black!80, thick] (1.9,-1.5) -- (2.6,-1.5);
+    \draw[black!80, thick] (3.4,-1.5) -- (4.1,-1.5);
+
+    \draw[step=1cm, black, thick] (0,-3) circle (0.25);
+    \draw[step=1cm, black, thick] (1.5,-3) circle (0.25);
+    \draw[step=1cm, black, thick] (3,-3) circle (0.25);
+    \draw[step=1cm, black, thick] (4.5,-3) circle (0.25);
+    \draw[black!80, thick] (0.4,-3) -- (1.1,-3);
+    \draw[black!80, thick] (1.9,-3) -- (2.6,-3);
+    \draw[black!80, thick] (3.4,-3) -- (4.1,-3);
+
+    \draw[step=1cm, black, thick] (0,-4.5) circle (0.25);
+    \draw[step=1cm, black, thick] (1.5,-4.5) circle (0.25);
+    \draw[step=1cm, black, thick] (3,-4.5) circle (0.25);
+    \draw[step=1cm, black, thick] (4.5,-4.5) circle (0.25);
+    \draw[black!80, thick] (0.4,-4.5) -- (1.1,-4.5);
+    \draw[black!80, thick] (1.9,-4.5) -- (2.6,-4.5);
+    \draw[black!80, thick] (3.4,-4.5) -- (4.1,-4.5);
+
+    \draw[black!80, thick] (0,-0.4) -- (0,-1.1);
+    \draw[black!80, thick] (1.5,-0.4) -- (1.5,-1.1);
+    \draw[black!80, thick] (3,-0.4) -- (3,-1.1);
+    \draw[black!80, thick] (4.5,-0.4) -- (4.5,-1.1);
+
+    \draw[black!80, thick] (0,-1.9) -- (0,-2.6);
+    \draw[black!80, thick] (1.5,-1.9) -- (1.5,-2.6);
+    \draw[black!80, thick] (3,-1.9) -- (3,-2.6);
+    \draw[black!80, thick] (4.5,-1.9) -- (4.5,-2.6);
+
+    \draw[black!80, thick] (0,-3.4) -- (0,-4.1);
+    \draw[black!80, thick] (1.5,-3.4) -- (1.5,-4.1);
+    \draw[black!80, thick] (3,-3.4) -- (3,-4.1);
+    \draw[black!80, thick] (4.5,-3.4) -- (4.5,-4.1);
+
+    \def\x{10}
+
+    \node at (2.25 + \x,1) {Kings graph};
+
+    \draw[step=1cm, black, thick] (0 + \x,0) circle (0.25);
+    \draw[step=1cm, black, thick] (1.5 + \x,0) circle (0.25);
+    \draw[step=1cm, black, thick] (3 + \x,0) circle (0.25);
+    \draw[step=1cm, black, thick] (4.5 + \x,0) circle (0.25);
+    \draw[black!80, thick] (0.4 + \x,0) -- (1.1 + \x,0);
+    \draw[black!80, thick] (1.9 + \x,0) -- (2.6 + \x,0);
+    \draw[black!80, thick] (3.4 + \x,0) -- (4.1 + \x,0);
+    
+    % Nota i punti e virgola aggiunti qui sotto:
+    \draw[red!80, thick] (0.3 + \x, -0.3) -- (1.2 + \x,-1.2);
+    \draw[red!80, thick] (1.8 + \x, -0.3) -- (2.7 + \x,-1.2);
+    \draw[red!80, thick] (3.3 + \x, -0.3) -- (4.2 + \x,-1.2);
+    \draw[red!80, thick] (1.2 + \x, -0.3) -- (0.3 + \x,-1.2);
+    \draw[red!80, thick] (2.7 + \x, -0.3) -- (1.8 + \x,-1.2);
+    \draw[red!80, thick] (4.2 + \x, -0.3) -- (3.3 + \x,-1.2);
+
+    \draw[step=1cm, black, thick] (0 + \x,-1.5) circle (0.25);
+    \draw[step=1cm, black, thick] (1.5 + \x,-1.5) circle (0.25);
+    \draw[step=1cm, black, thick] (3 + \x,-1.5) circle (0.25);
+    \draw[step=1cm, black, thick] (4.5 + \x,-1.5) circle (0.25);
+    \draw[black!80, thick] (0.4 + \x,-1.5) -- (1.1 + \x,-1.5);
+    \draw[black!80, thick] (1.9 + \x,-1.5) -- (2.6 + \x,-1.5);
+    \draw[black!80, thick] (3.4 + \x,-1.5) -- (4.1 + \x,-1.5);
+
+    % E anche qui:
+    \draw[red!80, thick] (0.3 + \x, -1.5 -0.3) -- (1.2 + \x,-1.5 -1.2);
+    \draw[red!80, thick] (1.8 + \x, -1.5 -0.3) -- (2.7 + \x,-1.5 -1.2);
+    \draw[red!80, thick] (3.3 + \x, -1.5 -0.3) -- (4.2 + \x,-1.5 -1.2);
+    \draw[red!80, thick] (1.2 + \x, -1.5 -0.3) -- (0.3 + \x,-1.5 -1.2);
+    \draw[red!80, thick] (2.7 + \x, -1.5 -0.3) -- (1.8 + \x,-1.5 -1.2);
+    \draw[red!80, thick] (4.2 + \x, -1.5 -0.3) -- (3.3 + \x,-1.5 -1.2);
+
+    \draw[step=1cm, black, thick] (0 + \x,-3) circle (0.25);
+    \draw[step=1cm, black, thick] (1.5 + \x,-3) circle (0.25);
+    \draw[step=1cm, black, thick] (3 + \x,-3) circle (0.25);
+    \draw[step=1cm, black, thick] (4.5 + \x,-3) circle (0.25);
+    \draw[black!80, thick] (0.4 + \x,-3) -- (1.1 + \x,-3);
+    \draw[black!80, thick] (1.9 + \x,-3) -- (2.6 + \x,-3);
+    \draw[black!80, thick] (3.4 + \x,-3) -- (4.1 + \x,-3);
+
+    % E infine qui:
+    \draw[red!80, thick] (0.3 + \x, -3 -0.3) -- (1.2 + \x,-3 -1.2);
+    \draw[red!80, thick] (1.8 + \x, -3 -0.3) -- (2.7 + \x,-3 -1.2);
+    \draw[red!80, thick] (3.3 + \x, -3 -0.3) -- (4.2 + \x,-3 -1.2);
+    \draw[red!80, thick] (1.2 + \x, -3 -0.3) -- (0.3 + \x,-3 -1.2);
+    \draw[red!80, thick] (2.7 + \x, -3 -0.3) -- (1.8 + \x,-3 -1.2);
+    \draw[red!80, thick] (4.2 + \x, -3 -0.3) -- (3.3 + \x,-3 -1.2);
+
+    \draw[step=1cm, black, thick] (0 + \x,-4.5) circle (0.25);
+    \draw[step=1cm, black, thick] (1.5 + \x,-4.5) circle (0.25);
+    \draw[step=1cm, black, thick] (3 + \x,-4.5) circle (0.25);
+    \draw[step=1cm, black, thick] (4.5 + \x,-4.5) circle (0.25);
+    \draw[black!80, thick] (0.4 + \x,-4.5) -- (1.1 + \x,-4.5);
+    \draw[black!80, thick] (1.9 + \x,-4.5) -- (2.6 + \x,-4.5);
+    \draw[black!80, thick] (3.4 + \x,-4.5) -- (4.1 + \x,-4.5);
+
+    \draw[black!80, thick] (0 + \x,-0.4) -- (0 + \x,-1.1);
+    \draw[black!80, thick] (1.5 + \x,-0.4) -- (1.5 + \x,-1.1);
+    \draw[black!80, thick] (3 + \x,-0.4) -- (3 + \x,-1.1);
+    \draw[black!80, thick] (4.5 + \x,-0.4) -- (4.5 + \x,-1.1);
+
+    \draw[black!80, thick] (0 + \x,-1.9) -- (0 + \x,-2.6);
+    \draw[black!80, thick] (1.5 + \x,-1.9) -- (1.5 + \x,-2.6);
+    \draw[black!80, thick] (3 + \x,-1.9) -- (3 + \x,-2.6);
+    \draw[black!80, thick] (4.5 + \x,-1.9) -- (4.5 + \x,-2.6);
+
+    \draw[black!80, thick] (0 + \x,-3.4) -- (0 + \x,-4.1);
+    \draw[black!80, thick] (1.5 + \x,-3.4) -- (1.5 + \x,-4.1);
+    \draw[black!80, thick] (3 + \x,-3.4) -- (3 + \x,-4.1);
+    \draw[black!80, thick] (4.5 + \x,-3.4) -- (4.5 + \x,-4.1);
+    
+\end{tikzpicture}
+\end{minipage}
+}
+}
+\caption{Representation of the 2D mesh and the Kings graph}
+\label{fig:tre}
+\end{figure}
+
+\subsection{Embedding the Communication Pattern}
+The embedding assigns each node with logical coordinates $(i, j)$ in the node
+grid to its corresponding process, preserving two-dimensional spatial contiguity.
+Each process communicates directly with its 8 neighbors in the logical grid,
+which correspond directly to the physical neighbors in the King's Graph topology,
+without any routing indirection.
+
+The correctness of this embedding, however, rests on a non-trivial assumption:
+that the propagation originated by any collapse is strictly confined within the
+chunks covered by the current mask, never spilling into the domain of a
+non-adjacent node. If this condition were violated, the local communication
+pattern described above would be insufficient, and global synchronization would
+be required at every step. We now establish that this condition is guaranteed
+by construction through the design of the tile set.
+
+\subsection{$\texttt{Maze}_{16}$}
+In the implementation, cells are updated via a stack that visits propagations
+in the following order: Up, Right, Left, Down. The algorithm begins by
+recursively updating cells starting from the one immediately above the collapsed
+cell, following the order specified above, until an update returns a cell as a
+superposition of all possible states at which point the cell is defined as
+\textit{virgin} and no further propagation occurs.
+
+To bound this propagation, we designed a specific tile set, hereafter referred
+to as $\texttt{Maze}_{16}$:
+
+% image of Maze16
+\begin{figure}[H]
+\centering
+
+\begin{tikzpicture}[scale=0.4]
+    % ====================================================
+    % ROW 1: TILES 0 TO 7 (Empty, Dead Ends, and first 3 Ls)
+    % ====================================================
+    \tikzset{idlabel/.style={below, font=\sffamily\bfseries\small}}
+    % 0. Empty
+    \begin{scope}[shift={(0,4.5)}]
+        \draw[step=1] (0,0) rectangle (3,3);
+        \node[idlabel] at (1.5,0) {0};
+    \end{scope}
+    
+    % 1. Dead End Up
+    \begin{scope}[shift={(4,4.5)}]
+        \fill[black] (1,1) rectangle (2,3);
+        \draw[step=1] (0,0) rectangle (3,3);
+        \node[idlabel] at (1.5,0) {1};
+    \end{scope}
+    
+    % 2. Dead End Right
+    \begin{scope}[shift={(8,4.5)}]
+        \fill[black] (1,1) rectangle (3,2);
+        \draw[step=1] (0,0) rectangle (3,3);
+        \node[idlabel] at (1.5,0) {2};
+    \end{scope}
+    
+    % 3. Dead End Down
+    \begin{scope}[shift={(12,4.5)}]
+        \fill[black] (1,0) rectangle (2,2);
+        \draw[step=1] (0,0) rectangle (3,3);
+        \node[idlabel] at (1.5,0) {3};
+    \end{scope}
+    
+    % 4. Dead End Left
+    \begin{scope}[shift={(16,4.5)}]
+        \fill[black] (0,1) rectangle (2,2);
+        \draw[step=1] (0,0) rectangle (3,3);
+        \node[idlabel] at (1.5,0) {4};
+    \end{scope}
+    
+    % 5. Corner North-East (L 1)
+    \begin{scope}[shift={(20,4.5)}]
+        \fill[black] (1,1) rectangle (2,3);
+        \fill[black] (2,1) rectangle (3,2);
+        \draw[step=1] (0,0) rectangle (3,3);
+        \node[idlabel] at (1.5,0) {5};
+    \end{scope}
+    
+    % 6. Corner South-East (L 2)
+    \begin{scope}[shift={(24,4.5)}]
+        \fill[black] (1,0) rectangle (2,2);
+        \fill[black] (2,1) rectangle (3,2);
+        \draw[step=1] (0,0) rectangle (3,3);
+        \node[idlabel] at (1.5,0) {6};
+    \end{scope}
+    
+    % 7. Corner South-West (L 3)
+    \begin{scope}[shift={(28,4.5)}]
+        \fill[black] (1,0) rectangle (2,2);
+        \fill[black] (0,1) rectangle (1,2);
+        \draw[step=1] (0,0) rectangle (3,3);
+        \node[idlabel] at (1.5,0) {7};
+    \end{scope}
+
+    % ====================================================
+    % ROW 2: TILES 8 TO 15 (Last L, Ts, Lines, and Cross/Filled)
+    % ====================================================
+    
+    % 8. Corner North-West (L 4)
+    \begin{scope}[shift={(0,0)}]
+        \fill[black] (1,1) rectangle (2,3);
+        \fill[black] (0,1) rectangle (1,2);
+        \draw[step=1] (0,0) rectangle (3,3);
+        \node[idlabel] at (1.5,0) {8};
+    \end{scope}
+    
+    % 9. T-Junction Up
+    \begin{scope}[shift={(4,0)}]
+        \fill[black] (0,1) rectangle (3,2);
+        \fill[black] (1,2) rectangle (2,3);
+        \draw[step=1] (0,0) rectangle (3,3);
+        \node[idlabel] at (1.5,0) {9};
+    \end{scope}
+    
+    % 10. T-Junction Right
+    \begin{scope}[shift={(8,0)}]
+        \fill[black] (1,0) rectangle (2,3);
+        \fill[black] (2,1) rectangle (3,2);
+        \draw[step=1] (0,0) rectangle (3,3);
+        \node[idlabel] at (1.5,0) {10};
+    \end{scope}
+    
+    % 11. T-Junction Down
+    \begin{scope}[shift={(12,0)}]
+        \fill[black] (0,1) rectangle (3,2);
+        \fill[black] (1,0) rectangle (2,1);
+        \draw[step=1] (0,0) rectangle (3,3);
+        \node[idlabel] at (1.5,0) {11};
+    \end{scope}
+    
+    % 12. T-Junction Left
+    \begin{scope}[shift={(16,0)}]
+        \fill[black] (1,0) rectangle (2,3);
+        \fill[black] (0,1) rectangle (1,2);
+        \draw[step=1] (0,0) rectangle (3,3);
+        \node[idlabel] at (1.5,0) {12};
+    \end{scope}
+    
+    % 13. Straight Vertical Line
+    \begin{scope}[shift={(20,0)}]
+        \fill[black] (1,0) rectangle (2,3);
+        \draw[step=1] (0,0) rectangle (3,3);
+        \node[idlabel] at (1.5,0) {13};
+    \end{scope}
+    
+    % 14. Straight Horizontal Line
+    \begin{scope}[shift={(24,0)}]
+        \fill[black] (0,1) rectangle (3,2);
+        \draw[step=1] (0,0) rectangle (3,3);
+        \node[idlabel] at (1.5,0) {14};
+    \end{scope}
+    
+    % 15. Cross (Filled Intersection)
+    \begin{scope}[shift={(28,0)}]
+        \fill[black] (0,1) rectangle (3,2);
+        \fill[black] (1,0) rectangle (2,3);
+        \draw[step=1] (0,0) rectangle (3,3);
+        \node[idlabel] at (1.5,0) {15};
+    \end{scope}
+
+\end{tikzpicture}
+\caption{A representation of the $\texttt{Maze}_{16}$ tileset.}
+\end{figure}
+
+$\texttt{Maze}_{16}$ consists of 16 tiles, each identified by an index
+$i \in \{0, \ldots, 15\}$ and defined on a $3 \times 3$ grid of bits with
+fixed corners set to 0. The 16 tiles represent all possible local corridor
+configurations, and any valid tiling of an $N \times N$ grid produces a
+well-formed classical maze.
+
+\begin{figure} [H]
+    \centering
+    \includegraphics[width=0.5\linewidth]{figs/maze32x32.png}
+    \caption{Example of a 32x32 maze generated by the algorithm}
+\end{figure}
+
+
+We define $\Delta_{prop}$ as the maximum propagation distance of an update for
+a given tile set. We claim:
+
+\subsubsection{$\texttt{Maze}_{16}$ Theorem on $\Delta_{prop}$}
+
+\paragraph{Theorem:}
+Given the $\texttt{Maze}_{16}$ tileset, it holds that:
+\[
+    \Delta_{prop}(\texttt{Maze}_{16}) = 1
+\]
+
+\paragraph{Proof:}
+Since the corners of each tile are always 0, the central pixel of each border
+is the only free bit, yielding exactly two possible border patterns:
+\begin{itemize}
+    \item \textbf{Pattern (a):} border $010$, i.e. the central pixel is 1.
+    \item \textbf{Pattern (b):} border $000$, i.e. the central pixel is 0.
+\end{itemize}
+
+We denote by $Dir(p, x)$ the update operation applied to a cell of state $x$
+in direction $Dir \in \{Up, Right, Left, Down\}$, where $p \in \{a, b\}$
+indicates the border pattern exhibited by the source cell toward $x$. The state
+$x$ is represented as a subset of $\{s_0, \ldots, s_{15}\}$, and $x = v$
+(virgin) denotes the full superposition of all 16 states.
+
+\textbf{Base case single collapsed neighbor.}
+We begin by studying propagation in the first direction visited by the algorithm:
+Up. Starting from a virgin cell $v$, the two possible updates yield:
+\begin{align*}
+    Up(a, v) &= \{3, 6, 7, 10, 11, 12, 13, 15\} \\
+    Up(b, v) &= \{0, 1, 2, 4, 5, 8, 9, 14\}
+\end{align*}
+
+We now move to the updated cell and attempt to propagate recursively. The key
+observation is that both resulting sets contain tiles exhibiting both border
+patterns toward every direction except the one of provenance (Down). For
+instance, toward Up:
+\begin{align*}
+    Up(a, v) &\ni 3\ \text{(pattern a)},\ 10\ \text{(pattern b)} \\
+    Up(b, v) &\ni 1\ \text{(pattern a)},\ 0\ \text{(pattern b)}
+\end{align*}
+and analogously toward Right and Left. Therefore:
+\[
+    Up([a,b],\ v) = Up(a, v) \cup Up(b, v) = \texttt{Maze}_{16} = v
+\]
+All cells adjacent to the first updated cell are necessarily returned to the
+virgin state and halt the propagation. By the rotational closure of
+$\texttt{Maze}_{16}$ which consists of 6 base tiles $\{0, 1, 5, 9, 13, 15\}$
+and their rotations the same argument holds for every initial propagation
+direction.
+
+
+\begin{figure}[ht]
+\centering
+\adjustbox{max width=\textwidth}{
+\setlength{\fboxsep}{10pt}
+\fbox{
+\begin{minipage}{0.8\linewidth}
+    \centering 
+    \begin{tikzpicture}[scale=0.7]
+    % Sfondo griglia 7x7
+    \draw[step=1cm, black!20, thin] (-3,-3) grid (4,4);
+    
+    % Chunk aggiornati (croce) in arancione
+    \fill[orange!30] (0,1) rectangle ++(1,1);
+    \fill[orange!30] (1,0) rectangle ++(1,1);
+    \fill[orange!30] (-1,0) rectangle ++(1,1);
+    \fill[orange!30] (0,-1) rectangle ++(1,1);
+    
+    % Chunk collassato centrale in rosso
+    \fill[red!30] (0,0) rectangle ++(1,1);
+    
+    % Ridisegno la griglia sopra i colori
+    \draw[step=1cm, black, thick] (-3,-3) grid (4,4);
+    
+    % Etichette V nere solo attorno alla croce
+    % Sopra la cella Up (0,1)
+    \node at (0.5, 2.5) {\textbf{V}};
+    % Sinistra e destra della cella Up
+    \node at (-0.5, 1.5) {\textbf{V}};
+    \node at (1.5,  1.5) {\textbf{V}};
+
+    % Destra della cella Right (1,0)
+    \node at (2.5,  0.5) {\textbf{V}};
+    % Sopra e sotto della cella Right
+    \node at (1.5,  1.5) {\textbf{V}};
+    \node at (1.5, -0.5) {\textbf{V}};
+
+    % Sinistra della cella Left (-1,0)
+    \node at (-1.5, 0.5) {\textbf{V}};
+    % Sopra e sotto della cella Left
+    \node at (-0.5, 1.5) {\textbf{V}};
+    \node at (-0.5,-0.5) {\textbf{V}};
+
+    % Sotto la cella Down (0,-1)
+    \node at (0.5, -1.5) {\textbf{V}};
+    % Sinistra e destra della cella Down
+    \node at (-0.5,-0.5) {\textbf{V}};
+    \node at (1.5, -0.5) {\textbf{V}};
+
+    % Legenda
+    \fill[red!30]    (5.5, 1.5) rectangle ++(0.8,0.8);
+    \draw[black,thick] (5.5, 1.5) rectangle ++(0.8,0.8);
+    \node[anchor=west] at (6.5, 1.9) {collapsed};
+
+    \fill[orange!30] (5.5, 0.5) rectangle ++(0.8,0.8);
+    \draw[black,thick] (5.5, 0.5) rectangle ++(0.8,0.8);
+    \node[anchor=west] at (6.5, 0.9) {updated};
+
+    \node[anchor=west] at (5.5, 0.0) {\textbf{V} virgin};
+
+    \end{tikzpicture}
+\end{minipage}
+}}
+\caption{Propagation of $\texttt{Maze}_{16}$ without previously collapsed borders.}
+\label{fig:tre}
+\end{figure}
+
+\textbf{Extended cases multiple collapsed neighbors.}
+In practice, successive collapses may cause a cell to be updated while more
+than one of its neighbors is already collapsed. We distinguish three
+exhaustive configurations:
+
+\textit{Case 1: two collapsed neighbors sharing a vertex.}
+Consider, for example, the Up and Right neighbors both collapsed. Depending
+on their border patterns, the possible resulting states of $x$ are:
+\begin{align*}
+    Up(a,v) \cap Right(a,v) &= \{5, 9, 10, 15\} \\
+    Up(b,v) \cap Right(b,v) &= \{0, 3, 4, 7\}  \\
+    Up(a,v) \cap Right(b,v) &= \{1, 8, 12, 13\}
+\end{align*}
+In each case, the resulting set contains tiles exhibiting both pattern (a) and
+pattern (b) toward every free direction. For instance, for $\{5, 9, 10, 15\}$,
+denoting by $Dir_p$ the border pattern $p \in \{a, b\}$ exhibited by a tile
+toward direction $Dir \in \{L, R, U, D\}$:
+\[
+    5\ (L_b, D_b),\quad 9\ (L_a, D_b),\quad 10\ (L_b, D_a),\quad 15\ (L_a, D_a)
+\]
+All combinations of patterns toward Left and Down are represented, so both
+adjacent cells are returned to the virgin state. The same holds for the
+remaining two sub-cases.
+
+\textit{Case 2: two collapsed neighbors not sharing a vertex.}
+When the two collapsed neighbors are opposite (e.g. Up and Down, or Left and
+Right), an analogous intersection argument yields sets that still cover both
+patterns toward the two remaining free directions, leaving those cells virgin.
+
+\textit{Case 3: three collapsed neighbors.}
+This case extends Case 1: starting from a set of 4 tiles such as
+$\{5, 9, 10, 15\}$, a third collapsed neighbor (e.g. Down with pattern b)
+further restricts $x$ to $\{5, 9\}$. This pair still exhibits both patterns
+toward the single remaining free direction (Left):
+\[
+    5\ (L_b),\quad 9\ (L_a)
+\]
+and therefore leaves that cell virgin. The argument generalizes to all
+combinations of three collapsed neighbors by rotational symmetry.
+
+
+\textbf{Observation.}
+The three cases above, together with the base case, are exhaustive with respect
+to propagation. The number of compatible states for a cell with $k$
+already-collapsed neighbors follows directly from the case analysis:
+\[
+    |\text{compatible states}| = 2^{4 - k}
+\]
+where $k \in \{0, 1, 2, 3, 4\}$. In all cases, as shown above, the updated
+cell either returns to the virgin state or is immediately collapsed, and in
+neither case does it propagate the update further. The entropy of adjacent
+cells is therefore irrelevant to the propagation bound.
+
+Therefore, in all possible configurations, after a single update in any
+direction, all cells adjacent to the updated cell are necessarily virgin and
+do not propagate the update further, which gives
+$\Delta_{prop}(\texttt{Maze}_{16}) = 1$. QED
+
+
+\paragraph{Corollary 1:}
+This result directly validates the embedding described above: since the mask
+spans $L > 1$ chunks and $\Delta_{prop} = 1$, no update originating inside
+the mask can ever reach the boundary of an adjacent node, making the local
+point-to-point communication pattern both necessary and sufficient.
+
+\paragraph{Corollary 2:}
+We define a \textit{contradiction} as a configuration in which one or more
+cells have entropy zero, that is, their set of compatible states is empty.
+From the observation above, the number of compatible states for any cell is
+given by $2^{4-k}$, where $k \in \{0, 1, 2, 3, 4\}$ is the number of
+already-collapsed neighbors. Since $2^{4-k} \geq 2^0 = 1$ for all admissible
+values of $k$, the entropy of any cell is strictly bounded below by 1.
+Therefore, no cell can ever reach entropy zero, and no contradiction can arise
+during the execution of the algorithm on $\texttt{Maze}_{16}$, therefore $\texttt{Maze}_{16}$ is contradiction free.
