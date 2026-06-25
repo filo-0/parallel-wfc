@@ -2,12 +2,12 @@
  * Sequential implementation of the Wave Function Collapse Algorithm.
  */
 
-#include "swfc.hpp"
-#include "pwfc.hpp"
-#include "types.hpp"
-#include "debug.hpp"
+#include "maze16/maze16.hpp"
 
-#include "maze16.hpp"
+#include "pwfc/types.hpp"
+#include "pwfc/pwfc.hpp"
+#include "pwfc/debug.hpp"
+
 
 #include <array>
 #include <chrono>

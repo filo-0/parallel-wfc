@@ -35,10 +35,13 @@ add_subdirectory("vendor/stb-image")
 find_package(MPI REQUIRED COMPONENTS CXX)
 include_directories("include")
 
-add_executable(mpipwfc "src/generation.cpp" "src/maze16.cpp" "src/mpipwfc.cpp")
-add_executable(swfc "src/generation.cpp" "src/maze16.cpp" "src/swfc.cpp")
+add_library(pwfc "src/pwfc/pwfc.cpp")
+
+
+add_executable(maze16-mpi-wfc "src/maze16/maze16.cpp" "src/maze16/mpipwfc.cpp")
+add_executable(maze16-wfc "src/maze16/maze16.cpp" "src/maze16/swfc.cpp")
 
 # Link the MPI::MPI_CXX target to your executable
 # This automatically handles include directories and compiler flags
-target_link_libraries(mpipwfc PRIVATE MPI::MPI_CXX stb-image)
-target_link_libraries(swfc PRIVATE stb-image)
+target_link_libraries(maze16-mpi-wfc PRIVATE MPI::MPI_CXX stb-image pwfc)
+target_link_libraries(maze16-wfc PRIVATE stb-image pwfc)

@@ -1,6 +1,6 @@
-#include "maze16.hpp"
-#include "types.hpp"
-#include "debug.hpp"
+#include "maze16/maze16.hpp"
+#include "pwfc/types.hpp"
+#include "pwfc/debug.hpp"
 
 #include <array>
 #include <cmath>

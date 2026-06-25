@@ -4,9 +4,9 @@
 #include <set>
 #include <vector>
 
-#include "pwfc.hpp"
-#include "debug.hpp"
-#include "types.hpp"
+#include "pwfc/pwfc.hpp"
+#include "pwfc/types.hpp"
+#include "pwfc/debug.hpp"
 
 namespace PWFC 
 {

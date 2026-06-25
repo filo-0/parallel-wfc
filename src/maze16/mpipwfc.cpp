@@ -5,16 +5,16 @@
 #include <mpi.h>
 #include <string>
 #include <string_view>
-#include <utility>
 #include <vector>
 #include "stb_image_write.h"
 
-#include "maze16.hpp"
 
-#include "debug.hpp"
-#include "pwfc.hpp"
-#include "mpiwfc.hpp"
-#include "types.hpp"
+#include "pwfc/debug.hpp"
+#include "pwfc/types.hpp"
+#include "pwfc/pwfc.hpp"
+
+#include "maze16/maze16.hpp"
+#include "maze16/mpiwfc.hpp"
 
 void iParseArgs(std::string &outpath, unsigned int &seed, int &length, char **argv, int argc);
 int main(int argc, char** argv) 

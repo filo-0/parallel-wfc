@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-#include "types.hpp"
+#include "pwfc/types.hpp"
 
 namespace PWFC 
 {
@@ -29,15 +29,6 @@ namespace PWFC
      * @return An non zero value if there is an error, 0 otherwise.
      */ 
     int RunMPI(std::vector<Chunk> &result, int rank, int dim, int size, int length, unsigned int seed);
-
-    /**
-     * Saves the input map to a ppm image file.
-     * @param result The map flattened in row major to a vector.
-     * @param dim The dimension of the compute graph side.
-     * @length The number of cells on the side of the map.
-     * @filepath The path to the output file to write.
-     */ 
-    void SaveToImage(const std::vector<Chunk> &result, int dim, int length, const std::string &filepath);
 
     /** Terminates the MPI environment. */ 
     void QuitMPI();
