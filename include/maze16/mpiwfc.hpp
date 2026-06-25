@@ -1,11 +1,10 @@
 #pragma once
 
-#include <string>
 #include <vector>
 
 #include "pwfc/types.hpp"
 
-namespace PWFC 
+namespace Maze16
 {
     /**
      * Initializes the MPI environment.
@@ -28,7 +27,7 @@ namespace PWFC
      * @param seed The seed of the number generator.
      * @return An non zero value if there is an error, 0 otherwise.
      */ 
-    int RunMPI(std::vector<Chunk> &result, int rank, int dim, int size, int length, unsigned int seed);
+    int RunMPI(std::vector<PWFC::Chunk> &result, int rank, int dim, int size, int length, unsigned int seed);
 
     /** Terminates the MPI environment. */ 
     void QuitMPI();

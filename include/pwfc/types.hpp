@@ -60,7 +60,6 @@ namespace PWFC
     };
     
     
-    constexpr int MIN_CHUNK_LENGTH = 16;
     /** A chunk of QPatterns. */
     class Chunk 
     {

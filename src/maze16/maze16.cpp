@@ -6,7 +6,7 @@
 #include <cmath>
 #include "stb_image_write.h"
 
-namespace MazeRule 
+namespace Maze16 
 {
     /** This value determines the smaller edge length of a chunk. */
     constexpr int PATTERN_LENGTH = 3;
@@ -168,22 +168,22 @@ namespace MazeRule
     }
     PWFC::RuleSet BuildRuleset(unsigned int seed) 
     {
-        std::vector<float> weights(   MazeRule::MAX_ENTROPY, 1);
+        std::vector<float> weights(   Maze16::MAX_ENTROPY, 1);
         std::vector<PWFC::Rule> rules;
-        for(int i = 0; i < MazeRule::MAX_ENTROPY; i++)
+        for(int i = 0; i < Maze16::MAX_ENTROPY; i++)
         {
-            for (int j = 0; j < MazeRule::MAX_ENTROPY; j++) 
+            for (int j = 0; j < Maze16::MAX_ENTROPY; j++) 
             {
                 for(int d = 0; d < 4; d++)
                 {
-                    if(CanConnect(MazeRule::PATTERNS[i], MazeRule::PATTERNS[j], d))
+                    if(CanConnect(Maze16::PATTERNS[i], Maze16::PATTERNS[j], d))
                     {
                         rules.emplace_back(i, j, d);
                     }
                 }
             }
         }
-        return PWFC::RuleSet(rules, weights, MazeRule::MAX_ENTROPY, seed);
+        return PWFC::RuleSet(rules, weights, Maze16::MAX_ENTROPY, seed);
     }
 
     void SaveToImage(const std::vector<int> &map, int length, const std::string &filepath)
@@ -195,8 +195,8 @@ namespace MazeRule
         PWFC_ASSERT(mapLength * mapLength == (int)map.size(), "Invalid map size!");
         PWFC_ASSERT(mapLength >= length, "Invalid image length!");
 
-        int width  = length * MazeRule::PATTERN_LENGTH;
-        int height = length * MazeRule::PATTERN_LENGTH;
+        int width  = length * Maze16::PATTERN_LENGTH;
+        int height = length * Maze16::PATTERN_LENGTH;
 
         std::vector<unsigned char> pixels(width * height * 3);
         
@@ -205,10 +205,10 @@ namespace MazeRule
         {
             for (int px = 0; px < width; ++px) 
             {
-                int px_out = px / MazeRule::PATTERN_LENGTH;
-                int py_out = py / MazeRule::PATTERN_LENGTH;
-                int px_in  = px % MazeRule::PATTERN_LENGTH;
-                int py_in  = py % MazeRule::PATTERN_LENGTH;
+                int px_out = px / Maze16::PATTERN_LENGTH;
+                int py_out = py / Maze16::PATTERN_LENGTH;
+                int px_in  = px % Maze16::PATTERN_LENGTH;
+                int py_in  = py % Maze16::PATTERN_LENGTH;
 
                 int state = map[py_out * mapLength + px_out];
                 
@@ -222,7 +222,7 @@ namespace MazeRule
                 else 
                 {
                     // From your PrintQChunk: state.Get() returns true for ' ' and false for '#'
-                    bool isBlack = MazeRule::PATTERNS[state].Get(px_in, py_in); 
+                    bool isBlack = Maze16::PATTERNS[state].Get(px_in, py_in); 
                     if (isBlack) 
                     {
                         pixels[i + 0] = 0;

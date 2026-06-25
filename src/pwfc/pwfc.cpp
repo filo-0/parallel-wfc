@@ -292,7 +292,7 @@ namespace PWFC
 
     ErrCode Generate(std::array<Chunk*, 9>& chunks, const RuleSet &ruleset)
     {
-        if(chunks[4] == nullptr || chunks[4]->Length() < MIN_CHUNK_LENGTH)
+        if(chunks[4] == nullptr)
             return ERR_INVALID_INPUT;
         
         auto &pivot = *chunks[4];

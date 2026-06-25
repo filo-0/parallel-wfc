@@ -18,19 +18,19 @@
 void iParseArgs(std::string &outpath, unsigned int &seed, int &length, char **argv, int argc);
 int main(int argc, char **argv)
 {
-    std::string outpath = "";
+    std::string outpath = "out.png";
     unsigned int seed = time(nullptr);
     int length = 16;
     iParseArgs(outpath, seed, length, argv, argc);
 
-    PWFC::Chunk chunk( length, MazeRule::MAX_ENTROPY);
+    PWFC::Chunk chunk( length, Maze16::MAX_ENTROPY);
     std::array<PWFC::Chunk*, 9> chunksref = {
         nullptr, nullptr, nullptr,
         nullptr, &chunk , nullptr,
         nullptr, nullptr, nullptr
     };
     
-    PWFC::RuleSet ruleset = MazeRule::BuildRuleset(seed);
+    PWFC::RuleSet ruleset = Maze16::BuildRuleset(seed);
     auto t0 = std::chrono::high_resolution_clock::now();
     PWFC::Generate(chunksref, ruleset);
     auto t1 = std::chrono::high_resolution_clock::now();
@@ -43,7 +43,7 @@ int main(int argc, char **argv)
     else 
     {
         PWFC_LOG_INFO("There was no error in the final check :)");
-        MazeRule::SaveToImage(map, length, outpath);
+        Maze16::SaveToImage(map, length, outpath);
     }   
 }
 void iParseArgs(std::string &outpath, unsigned int &seed, int &length, char **argv, int argc)

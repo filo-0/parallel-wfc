@@ -23,10 +23,10 @@ int main(int argc, char** argv)
     
     int length = 128;
     unsigned int seed = time(nullptr);
-    std::string outpath = "";
+    std::string outpath = "out.png";
     iParseArgs(outpath, seed, length, argv, argc);
 
-    int error = PWFC::InitMPI(rank, dim, size, argc, argv);
+    int error = Maze16::InitMPI(rank, dim, size, argc, argv);
     if (error) 
     {
         if (rank == 0) 
@@ -38,7 +38,7 @@ int main(int argc, char** argv)
     }
 
     std::vector<PWFC::Chunk> result;
-    error = PWFC::RunMPI(result, rank, dim, size, length, seed);
+    error = Maze16::RunMPI(result, rank, dim, size, length, seed);
     if(error)
     {
         PWFC_LOG_ERROR("A node encountered an error generating the map!");
@@ -76,17 +76,17 @@ int main(int argc, char** argv)
         }
         
         
-        bool validated = PWFC::Validate(map, MazeRule::BuildRuleset(0), mapLength);
+        bool validated = PWFC::Validate(map, Maze16::BuildRuleset(0), mapLength);
         if (!validated)
             PWFC_LOG_ERROR("There was an error in the final check :(");
         else 
             PWFC_LOG_INFO("There was no error in the final check :)");
 
-        MazeRule::SaveToImage(map, length, outpath);
+        Maze16::SaveToImage(map, length, outpath);
     }
 
 
-    PWFC::QuitMPI();
+    Maze16::QuitMPI();
     return 0;
 }
 void iParseArgs(std::string &outpath, unsigned int &seed, int &length, char **argv, int argc)
@@ -118,8 +118,9 @@ void iParseArgs(std::string &outpath, unsigned int &seed, int &length, char **ar
     }
 }
 
-namespace PWFC 
+namespace Maze16 
 {
+    constexpr int MIN_CHUNK_LENGTH = 16;
     int InitMPI(int &rank, int &dim, int &size, int argc, char **argv)
     {
         int error = 0;
@@ -197,14 +198,14 @@ namespace PWFC
     }
 
     
-    int RunMPI(std::vector<Chunk> &result, int rank, int dim, int size, int length, unsigned int seed)
+    int RunMPI(std::vector<PWFC::Chunk> &result, int rank, int dim, int size, int length, unsigned int seed)
     {
         double execTime = 0.0;
         double syncTime = 0.0;
         double gatherTime = 0.0;
         auto execT0 = MPI_Wtime();
 
-        int chunkLength = std::max(iCeilDiv(length, dim * 3), MIN_CHUNK_LENGTH);
+        int chunkLength = std::max(iCeilDiv(length, dim * 3), Maze16::MIN_CHUNK_LENGTH);
         std::vector<PWFC::Chunk> localChunksData; // The 3x3 cells of local chunks
         std::vector<PWFC::Chunk> sharedChunksData; // The 3x3 buffer of chunks to load from neighbor nodes
         std::array<PWFC::Chunk*, 9> localChunksRef = { }; // The 3x3 array of chunk references to send to PWFC
@@ -213,14 +214,14 @@ namespace PWFC
         sharedChunksData.reserve(9);
         for(int i = 0; i < 9; i++)
         {
-            localChunksData.emplace_back(chunkLength, MazeRule::MAX_ENTROPY);
-            sharedChunksData.emplace_back(chunkLength, MazeRule::MAX_ENTROPY);
+            localChunksData.emplace_back(chunkLength, Maze16::MAX_ENTROPY);
+            sharedChunksData.emplace_back(chunkLength, Maze16::MAX_ENTROPY);
         }
 
         PWFC_LOG_INFO("[NODE_%d] Starting WFC with chunks of dimension %dx%d", rank, chunkLength, chunkLength);
         PWFC_LOG_INFO("[NODE_%d] Computation will produce a map %f%% bigger", rank, (float)(chunkLength * dim * 3 - length) / length * 100);
 
-        RuleSet ruleset = MazeRule::BuildRuleset(seed);
+        PWFC::RuleSet ruleset = Maze16::BuildRuleset(seed);
         for(int round = 0; round < 9; round++)
         {
             int pivotX = round % 3;
@@ -242,7 +243,7 @@ namespace PWFC
 
             // Execute the algorithm
             ruleset.SetSeed(ruleset.Seed() + round * 33 + rank * 17);
-            ErrCode err = Generate(localChunksRef, ruleset);
+            PWFC::ErrCode err = Generate(localChunksRef, ruleset);
             if (err)
                 return err;
 
@@ -275,8 +276,8 @@ namespace PWFC
 
         double gatherT0 = MPI_Wtime();
         int sendingBytes = localChunksData[0].StateDataSize();
-        int stateBlockCount = sendingBytes / sizeof(BitsetBlock);
-        std::vector<BitsetBlock> localBuffer(sendingBytes / sizeof(BitsetBlock) * size); 
+        int stateBlockCount = sendingBytes / sizeof(PWFC::BitsetBlock);
+        std::vector<PWFC::BitsetBlock> localBuffer(sendingBytes / sizeof(PWFC::BitsetBlock) * size); 
         for(int i = 0; i < 9; i++)
         {
             MPI_Gather(
@@ -294,7 +295,7 @@ namespace PWFC
                     std::copy(
                         localBuffer.data() + r * stateBlockCount, 
                         localBuffer.data() + (r + 1) * stateBlockCount,
-                        (BitsetBlock*)result[r * 9 + i].StateData()
+                        (PWFC::BitsetBlock*)result[r * 9 + i].StateData()
                     );
                 }
             }
@@ -312,80 +313,4 @@ namespace PWFC
 
         return 0;
     }
-
-    /*void SaveToImage(const std::vector<PWFC::QChunk>& result, int dim, int length, const std::string& filepath) 
-    {
-        if(result.empty() || filepath == "")
-            return;
-        
-        PWFC_LOG_INFO("Building final PNG image");
-        
-        int chunkLen = result[0].Length();
-        int chunksPerSide = 3 * dim;
-        int width  = length * MazeRule::PATTERN_LENGTH;
-        int height = length * MazeRule::PATTERN_LENGTH;
-        PWFC_ASSERT(chunksPerSide * chunkLen >= length, "Invalid chunk size, too small! [real=%d, asked=%d]", chunksPerSide * chunkLen, length);
-
-        std::vector<unsigned char> pixels(width * height * 3);
-
-        for (int py = 0; py < height; ++py) 
-        {
-            for (int px = 0; px < width; ++px) 
-            {
-                // Global chunk coordinates
-                int cx = px / (chunkLen * MazeRule::PATTERN_LENGTH);
-                int cy = py / (chunkLen * MazeRule::PATTERN_LENGTH);
-
-                // Pattern coordinates inside the current chunk
-                int p_x = (px / MazeRule::PATTERN_LENGTH) % chunkLen;
-                int p_y = (py / MazeRule::PATTERN_LENGTH) % chunkLen;
-
-                // Pixel coordinates inside the pattern
-                int px_in = px % MazeRule::PATTERN_LENGTH;
-                int py_in = py % MazeRule::PATTERN_LENGTH;
-
-                // Calculate which Rank / Node this chunk came from
-                int i = cy % 3;
-                int j = cx % 3;
-                int rankX = cx / 3;
-                int rankY = cy / 3;
-
-                // Index in the flattened MPI result vector
-                int chunk_index = i * 3 + j + rankX * 9 + 9 * dim * rankY;
-
-                // Extract the pixel state
-                const PWFC::QChunk& chunk = result[chunk_index];
-                const PWFC::QPattern q = chunk.Get(p_x, p_y);
-
-                // Calculate the start index for this pixel in the 1D array
-                int pixel_idx = (py * width + px) * 3;
-
-                if (!q.IsCollapsed()) 
-                {
-                    // Fallback Red
-                    pixels[pixel_idx + 0] = 255; // R
-                    pixels[pixel_idx + 1] = 0;   // G
-                    pixels[pixel_idx + 2] = 0;   // B
-                } 
-                else 
-                {
-                    bool isBlack = MazeRule::PATTERNS[q.State()].Get(px_in, py_in); 
-                    unsigned char color = isBlack ? 0 : 255;
-
-                    // Set RGB channels to either all 0 (black) or all 255 (white)
-                    pixels[pixel_idx + 0] = color;
-                    pixels[pixel_idx + 1] = color;
-                    pixels[pixel_idx + 2] = color;
-                }
-            }
-        }
-
-        // Write image 
-        int success = stbi_write_png(filepath.c_str(), width, height, 3, pixels.data(), width * 3);
-
-        if (success) 
-            PWFC_LOG_INFO("Successfully saved PNG map to %s", filepath.c_str());
-        else 
-            PWFC_LOG_ERROR("Failed to write PNG to %s!", filepath.c_str());
-    }*/
 }

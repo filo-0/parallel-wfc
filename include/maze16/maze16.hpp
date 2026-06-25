@@ -2,7 +2,7 @@
 #include <vector>
 #include <string>
 
-namespace MazeRule 
+namespace Maze16 
 {
     constexpr int MAX_ENTROPY = 16;
     PWFC::RuleSet BuildRuleset(unsigned int seed);
