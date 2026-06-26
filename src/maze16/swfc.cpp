@@ -30,9 +30,9 @@ int main(int argc, char **argv)
         nullptr, nullptr, nullptr
     };
     
-    PWFC::RuleSet ruleset = Maze16::BuildRuleset(seed);
+    PWFC::RuleSet ruleset = Maze16::BuildRuleset();
     auto t0 = std::chrono::high_resolution_clock::now();
-    PWFC::Generate(chunksref, ruleset);
+    PWFC::Generate(chunksref, ruleset, seed);
     auto t1 = std::chrono::high_resolution_clock::now();
     PWFC_LOG_INFO("Execution time: %f", std::chrono::duration<float>(t1 - t0).count());
     

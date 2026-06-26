@@ -76,7 +76,7 @@ int main(int argc, char** argv)
         }
         
         
-        bool validated = PWFC::Validate(map, Maze16::BuildRuleset(0), mapLength);
+        bool validated = PWFC::Validate(map, Maze16::BuildRuleset(), mapLength);
         if (!validated)
             PWFC_LOG_ERROR("There was an error in the final check :(");
         else 
@@ -221,7 +221,7 @@ namespace Maze16
         PWFC_LOG_INFO("[NODE_%d] Starting WFC with chunks of dimension %dx%d", rank, chunkLength, chunkLength);
         PWFC_LOG_INFO("[NODE_%d] Computation will produce a map %f%% bigger", rank, (float)(chunkLength * dim * 3 - length) / length * 100);
 
-        PWFC::RuleSet ruleset = Maze16::BuildRuleset(seed);
+        PWFC::RuleSet ruleset = Maze16::BuildRuleset();
         for(int round = 0; round < 9; round++)
         {
             int pivotX = round % 3;
@@ -242,8 +242,7 @@ namespace Maze16
             }
 
             // Execute the algorithm
-            ruleset.SetSeed(ruleset.Seed() + round * 33 + rank * 17);
-            PWFC::ErrCode err = Generate(localChunksRef, ruleset);
+            PWFC::ErrCode err = Generate(localChunksRef, ruleset, seed + round * 33 + rank * 17);
             if (err)
                 return err;
 

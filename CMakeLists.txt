@@ -33,15 +33,17 @@ add_subdirectory("vendor/stb-image")
 
 # Find the MPI package (specifically looking for the CXX components)
 find_package(MPI REQUIRED COMPONENTS CXX)
-include_directories("include")
+include_directories("include" "vendor/rapidjson/include")
 
-add_library(pwfc "src/pwfc/pwfc.cpp")
+file(GLOB_RECURSE PWFC_SRC "src/pwfc/*.cpp")
+add_library(pwfc ${PWFC_SRC})
 
-
+add_executable(parse-test "src/parse-test.cpp")
 add_executable(maze16-mpi-wfc "src/maze16/maze16.cpp" "src/maze16/mpipwfc.cpp")
 add_executable(maze16-wfc "src/maze16/maze16.cpp" "src/maze16/swfc.cpp")
 
 # Link the MPI::MPI_CXX target to your executable
 # This automatically handles include directories and compiler flags
+target_link_libraries(parse-test PRIVATE pwfc)
 target_link_libraries(maze16-mpi-wfc PRIVATE MPI::MPI_CXX stb-image pwfc)
 target_link_libraries(maze16-wfc PRIVATE stb-image pwfc)

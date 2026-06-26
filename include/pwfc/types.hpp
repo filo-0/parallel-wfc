@@ -9,16 +9,16 @@ namespace PWFC
     class Cell;
     using BitsetBlock = size_t;
     constexpr int BITS_PER_BLOCK = sizeof(BitsetBlock) * 8;
-    
+
     enum ErrCode : int 
     {
-        ERR_OK,
-        ERR_ZERO_ENTROPY,
-        ERR_OUT_OF_CHUNK,
-        ERR_INVALID_INPUT
+        ERR_OK,            // There wasn't any problem.
+        ERR_ZERO_ENTROPY,  // The generation has encountered a conflict.
+        ERR_OUT_OF_CHUNK,  // The generation has gone outside of the chunk borders.
+        ERR_INVALID_INPUT, // The generation received an invalid input.
+        ERR_BAD_FORMAT,    // The parser has encountered a wrong format.
     };
     constexpr int STATE_INVALID = -1;
-
     
     /** 
      * This struct represents an allowance rule meaning:
@@ -38,8 +38,9 @@ namespace PWFC
     class RuleSet
     {
     public:
-        inline RuleSet(const std::vector<Rule> &rules, const std::vector<float> &weights, int n, unsigned int seed) 
-            : _Weights(weights), _Rules(n * n * 4, false), _Seed(seed), _MaxEntropy(n)
+        RuleSet() = default;
+        inline RuleSet(const std::vector<Rule> &rules, const std::vector<float> &weights, int n) 
+            : _Weights(weights), _Rules(n * n * 4, false), _MaxEntropy(n)
         {
             for(const Rule &rule : rules)
                 _Rules[rule.AId * n * 4 + rule.BId * 4 + rule.A2B] = true;
@@ -49,13 +50,9 @@ namespace PWFC
         inline float Weight(int id) const { return _Weights[id]; }
         inline const std::vector<float> &Weights() const { return _Weights; }
         inline int MaxEntropy() const { return _MaxEntropy; }
-        inline unsigned int Seed() const { return _Seed; }
-
-        inline RuleSet &SetSeed(unsigned int seed) { _Seed = seed; return *this; }
     private:
         std::vector<float> _Weights;
         std::vector<bool>  _Rules;
-        unsigned int _Seed;
         int _MaxEntropy;
     };
     

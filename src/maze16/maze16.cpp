@@ -166,7 +166,7 @@ namespace Maze16
 
         return aOpen == bOpen;
     }
-    PWFC::RuleSet BuildRuleset(unsigned int seed) 
+    PWFC::RuleSet BuildRuleset() 
     {
         std::vector<float> weights(   Maze16::MAX_ENTROPY, 1);
         std::vector<PWFC::Rule> rules;
@@ -183,7 +183,7 @@ namespace Maze16
                 }
             }
         }
-        return PWFC::RuleSet(rules, weights, Maze16::MAX_ENTROPY, seed);
+        return PWFC::RuleSet(rules, weights, Maze16::MAX_ENTROPY);
     }
 
     void SaveToImage(const std::vector<int> &map, int length, const std::string &filepath)

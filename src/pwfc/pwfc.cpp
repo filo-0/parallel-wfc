@@ -1,5 +1,6 @@
 
 #include <cassert>
+#include <chrono>
 #include <random>
 #include <set>
 #include <vector>
@@ -290,13 +291,13 @@ namespace PWFC
         return ERR_OK;
     }
 
-    ErrCode Generate(std::array<Chunk*, 9>& chunks, const RuleSet &ruleset)
+    ErrCode Generate(std::array<Chunk*, 9>& chunks, const RuleSet &ruleset, unsigned int seed)
     {
         if(chunks[4] == nullptr)
             return ERR_INVALID_INPUT;
         
         auto &pivot = *chunks[4];
-        std::mt19937 rand(ruleset.Seed());
+        std::mt19937 rand(seed ? seed : std::chrono::high_resolution_clock::now().time_since_epoch().count());
         int chunkLen = pivot.Length();
         
         std::set<iCellID> uncollapsed;

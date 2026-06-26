@@ -1,0 +1,14 @@
+{
+    "tiles": [
+        {
+            "name": "grass",
+            "symmetry": "X",
+            "socket:" {
+                "top": "sand"
+                "right": "sand"
+                "bottom": "sand"
+                "left": "sand"
+            }
+        }
+    ]
+}
